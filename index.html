@@ -109,6 +109,7 @@
     border-color: rgba(200, 160, 96, 0.65);
     background: rgba(0, 0, 0, 0.62);
   }
+  /* Mobile layout only — desktop uses rules above */
   @media (max-width: 768px) {
     #bookPrompt {
       font-size: max(0.88rem, 16px);
@@ -116,6 +117,54 @@
     }
     #soundToggle {
       font-size: max(0.68rem, 13px);
+    }
+  }
+  @media (max-width: 768px) and (orientation: portrait) {
+    #bookPrompt {
+      bottom: calc(env(safe-area-inset-bottom, 0px) + max(12px, 2.5vh));
+      left: 50%;
+      right: auto;
+      width: min(92vw, 24rem);
+      max-width: 92vw;
+      padding: 12px 16px;
+      line-height: 1.35;
+    }
+    #soundToggle {
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      right: calc(env(safe-area-inset-right, 0px) + 10px);
+      padding: 8px 12px;
+      min-height: 44px;
+    }
+    #sceneExitBtn {
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      left: calc(env(safe-area-inset-left, 0px) + 10px);
+      width: 44px;
+      height: 44px;
+      line-height: 40px;
+      font-size: 1.45rem;
+    }
+  }
+  @media (max-width: 768px) and (orientation: landscape) {
+    #bookPrompt {
+      bottom: calc(env(safe-area-inset-bottom, 0px) + max(6px, 1vh));
+      width: min(88vw, 26rem);
+      padding: 10px 16px;
+      font-size: max(0.82rem, 15px);
+    }
+    #soundToggle {
+      top: calc(env(safe-area-inset-top, 0px) + 6px);
+      right: calc(env(safe-area-inset-right, 0px) + 6px);
+      padding: 6px 10px;
+      min-height: 40px;
+      font-size: max(0.62rem, 12px);
+    }
+    #sceneExitBtn {
+      top: calc(env(safe-area-inset-top, 0px) + 6px);
+      left: calc(env(safe-area-inset-left, 0px) + 6px);
+      width: 42px;
+      height: 42px;
+      line-height: 38px;
+      font-size: 1.4rem;
     }
   }
   @media (pointer: coarse) {
@@ -678,11 +727,35 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x091408, 10, 30);
 scene.background = new THREE.Color(0x080f05);
 
-const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 60);
 const SCENE_CAMERA_POS = new THREE.Vector3(0, 2.9, 5.2);
 const SCENE_LOOK_AT = new THREE.Vector3(0, 0.62, 0);
-camera.position.copy(SCENE_CAMERA_POS);
+const DESKTOP_CAMERA_FOV = 46;
+/** Phone landscape: narrower FOV ≈ zoom — closer to desktop scale on short wide screens. */
+const MOBILE_FOV_LANDSCAPE = 35;
+/** Phone portrait: slightly wider FOV + closer rig so the table fills the tall frame. */
+const MOBILE_FOV_PORTRAIT = 50;
+const SCENE_CAMERA_POS_MOBILE_PORTRAIT = new THREE.Vector3(0, 2.86, 4.18);
+
+function copySceneCameraPosition(out) {
+  if (!isMobilePerfProfile()) return out.copy(SCENE_CAMERA_POS);
+  if (window.innerHeight > window.innerWidth) return out.copy(SCENE_CAMERA_POS_MOBILE_PORTRAIT);
+  return out.copy(SCENE_CAMERA_POS);
+}
+function getSceneCameraFov() {
+  if (!isMobilePerfProfile()) return DESKTOP_CAMERA_FOV;
+  if (window.innerHeight > window.innerWidth) return MOBILE_FOV_PORTRAIT;
+  return MOBILE_FOV_LANDSCAPE;
+}
+
+const camera = new THREE.PerspectiveCamera(
+  getSceneCameraFov(),
+  window.innerWidth / window.innerHeight,
+  0.1,
+  60,
+);
+copySceneCameraPosition(camera.position);
 camera.lookAt(SCENE_LOOK_AT);
+camera.updateProjectionMatrix();
 
 /* ── PROCEDURAL TEXTURES ── */
 function pageTex() {
@@ -1874,6 +1947,9 @@ let returnCamElapsed = 0;
 let returnCamDone = false;
 const returnFromBookPos = new THREE.Vector3();
 const returnFromBookLookAt = new THREE.Vector3();
+const returnSceneEndPos = new THREE.Vector3();
+let returnStartFov = DESKTOP_CAMERA_FOV;
+let returnSceneEndFov = DESKTOP_CAMERA_FOV;
 
 function easeInOut(t) {
   return t * t * (3 - 2 * t);
@@ -1972,7 +2048,9 @@ function finishReturnToSceneView() {
   bGroup.rotation.y = BOOK_START_ROT_Y;
   updateBookFromProgress();
   applySpreadTextures();
-  camera.position.copy(SCENE_CAMERA_POS);
+  copySceneCameraPosition(camera.position);
+  camera.fov = getSceneCameraFov();
+  camera.updateProjectionMatrix();
   camera.lookAt(SCENE_LOOK_AT);
   teaSipCount = 0;
   teaRefillInProgress = false;
@@ -2016,7 +2094,9 @@ function updateReturnToScene(dt) {
       const camDur = CAM_TO_BOOK_DURATION;
       const t = Math.min(1, returnCamElapsed / camDur);
       const e = easeInOut(t);
-      camera.position.lerpVectors(returnFromBookPos, SCENE_CAMERA_POS, e);
+      camera.fov = THREE.MathUtils.lerp(returnStartFov, returnSceneEndFov, e);
+      camera.updateProjectionMatrix();
+      camera.position.lerpVectors(returnFromBookPos, returnSceneEndPos, e);
       camCurTgt.lerpVectors(returnFromBookLookAt, SCENE_LOOK_AT, e);
       camera.lookAt(camCurTgt);
       if (t >= 1) returnCamDone = true;
@@ -2024,7 +2104,9 @@ function updateReturnToScene(dt) {
       returnCamDone = true;
     }
   } else {
-    camera.position.copy(SCENE_CAMERA_POS);
+    copySceneCameraPosition(camera.position);
+    camera.fov = getSceneCameraFov();
+    camera.updateProjectionMatrix();
     camera.lookAt(SCENE_LOOK_AT);
   }
 
@@ -2066,6 +2148,9 @@ function startReturnToScene() {
     steamMat.opacity = 0.32;
     applyTeaSipVisual();
   }
+  copySceneCameraPosition(returnSceneEndPos);
+  returnSceneEndFov = getSceneCameraFov();
+  returnStartFov = camera.fov;
   isReturningToScene = true;
   interactionMode = 'returningToScene';
 }
@@ -2461,7 +2546,21 @@ function applyViewportToRenderer() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2));
   renderer.setSize(w, h);
   camera.aspect = w / Math.max(h, 1);
-  camera.updateProjectionMatrix();
+  if (mobile) {
+    camera.fov = getSceneCameraFov();
+    camera.updateProjectionMatrix();
+    if (interactionMode === 'scene' && !isReturningToScene) {
+      copySceneCameraPosition(camera.position);
+      camera.lookAt(SCENE_LOOK_AT);
+    }
+  } else {
+    camera.fov = DESKTOP_CAMERA_FOV;
+    camera.updateProjectionMatrix();
+    if (interactionMode === 'scene' && !isReturningToScene) {
+      camera.position.copy(SCENE_CAMERA_POS);
+      camera.lookAt(SCENE_LOOK_AT);
+    }
+  }
 }
 window.addEventListener('resize', applyViewportToRenderer);
 if (window.visualViewport) {

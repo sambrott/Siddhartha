@@ -19,7 +19,7 @@
 </style>
 </head>
 <body>
-<audio id="ambient" preload="auto" playsinline loop crossorigin="anonymous"></audio>
+<audio id="ambient" preload="auto" playsinline loop></audio>
 <div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
 <canvas id="c"></canvas>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -34,7 +34,6 @@ function assetUrl(relativePath) {
 (function initAmbientSrc() {
   const el = document.getElementById('ambient');
   if (!el) return;
-  el.crossOrigin = 'anonymous';
   el.src = assetUrl('coqui_sounds.mp4');
 })();
 if (typeof THREE === 'undefined') {

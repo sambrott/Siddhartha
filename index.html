@@ -328,6 +328,22 @@ const bookParchmentMats = [
 const pMat = new THREE.MeshStandardMaterial({
   map: pTex, roughness: 0.95, metalness: 0, color: 0xc09850,
 });
+/* Lighter multiply on the four vertical faces of the page stack (fore-edge / sides). */
+const pageSideMat = new THREE.MeshStandardMaterial({
+  map: pTex,
+  roughness: 0.9,
+  metalness: 0,
+  color: 0xf4ebe0,
+});
+/* BoxGeometry: +x,-x, +y,-y, +z,-z — sides are 0,1,4,5; top/bottom of stack are 2,3. */
+const pageBlockMats = [
+  pageSideMat,
+  pageSideMat,
+  pMat,
+  pMat,
+  pageSideMat,
+  pageSideMat,
+];
 const titleMat = new THREE.MeshStandardMaterial({
   map: titleTexMap, roughness: 0.92, metalness: 0, color: 0xf5edd8,
   side: THREE.DoubleSide,
@@ -773,7 +789,7 @@ bBot.position.y = -0.14;
 bBot.castShadow = bBot.receiveShadow = true;
 bBot.userData.isBookPart = true;
 bGroup.add(bBot);
-const bPgs = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.3, 1.9), pMat);
+const bPgs = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.3, 1.9), pageBlockMats);
 bPgs.position.y = 0.04;
 bPgs.castShadow = bPgs.receiveShadow = true;
 bPgs.userData.isBookPart = true;

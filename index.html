@@ -44,11 +44,41 @@
     color: rgba(232, 213, 160, 0.88);
     border-color: rgba(200, 160, 96, 0.42);
   }
+  #sceneExitBtn {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 12;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    line-height: 26px;
+    font-family: system-ui, sans-serif;
+    font-size: 1rem;
+    color: rgba(232, 213, 160, 0.9);
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(200, 160, 96, 0.4);
+    border-radius: 4px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+  #sceneExitBtn.visible {
+    display: flex;
+  }
+  #sceneExitBtn:hover {
+    color: #fff8e8;
+    border-color: rgba(200, 160, 96, 0.65);
+    background: rgba(0, 0, 0, 0.62);
+  }
 </style>
 </head>
 <body>
 <audio id="ambient" preload="auto" playsinline loop></audio>
 <button type="button" id="soundToggle" aria-pressed="false" aria-label="Ambient sound off. Click to turn on." title="Ambient sound">Sound · off</button>
+<button type="button" id="sceneExitBtn" hidden aria-label="Return to scene">×</button>
 <div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
 <canvas id="c"></canvas>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -59,6 +89,22 @@
 /** Resolve assets relative to this document (works on GitHub Pages and subpaths). */
 function assetUrl(relativePath) {
   return new URL(relativePath, document.baseURI || document.location.href).href;
+}
+/** Tea clips: sip.m4a (sips 1–2), Ahhhh.mp3 (sip 3). Refill is silent. */
+function tryPlayTeaMp3(filename, volume, onFail) {
+  const a = new Audio(assetUrl(filename));
+  a.volume = volume != null ? volume : 1;
+  const fail =
+    typeof onFail === 'function'
+      ? function () {
+          onFail();
+        }
+      : function () {};
+  a.addEventListener('error', fail, { once: true });
+  const p = a.play();
+  if (p && typeof p.then === 'function') {
+    p.catch(fail);
+  }
 }
 (function initAmbientSrc() {
   const el = document.getElementById('ambient');
@@ -99,7 +145,7 @@ const PAGE_TEX_H = 768;
 const MAX_BOOK_PAGE_SLICES = 88;
 const PARAS_PER_PAGE = 10;
 const PARAS_CHAPTER_FIRST_PAGE = 4;
-const MAX_PRETEXT_PAGES = 174;
+const MAX_PRETEXT_PAGES = 172;
 
 const BOOK_META = { title: 'Siddhartha', author: 'Hermann Hesse', year: '' };
 
@@ -115,6 +161,8 @@ const PT = {
   marginY: 52,
   gutter: 14,
 };
+/** Bottom folio page numbers (12px × 150% = 18px). */
+const FOLIO_FONT_PX = 18;
 
 function fillParchment(ctx, w, h) {
   ctx.fillStyle = '#f7f2e8';
@@ -289,7 +337,7 @@ function renderPageColumn(ctx, page, pages, chapters, firstNumIdx, colRect) {
     pageIndex >= 0 && firstNumIdx >= 0 && pageIndex >= firstNumIdx && firstNumIdx < pages.length;
   const folioNum = showFolio ? pageIndex - firstNumIdx + 1 : 0;
   const padTop = showFolio ? 22 : 0;
-  const padBot = showFolio ? 22 : 0;
+  const padBot = showFolio ? Math.max(22, FOLIO_FONT_PX + 10) : 0;
   const contentTop = y + padTop;
   const contentMaxY = y + h - padBot;
 
@@ -377,27 +425,27 @@ function renderPageColumn(ctx, page, pages, chapters, firstNumIdx, colRect) {
   if (page.type === 'chapter-start') {
     const ch = page.chapter;
     const innerH = contentMaxY - contentTop;
-    const openerH = Math.floor(innerH * 0.48);
+    const openerH = Math.floor(innerH * 0.58);
     const bodyTop = contentTop + openerH;
     let ty = contentTop;
     ctx.textAlign = 'center';
-    ctx.font = "26px 'Cinzel', Georgia, serif";
+    ctx.font = "52px 'Cinzel', Georgia, serif";
     ctx.fillStyle = '#c8a96e';
-    ctx.fillText('\u2767', x + w / 2, ty + 22);
+    ctx.fillText('\u2767', x + w / 2, ty + 44);
     if (ch.number) {
-      ctx.font = PT.fontDisplay;
+      ctx.font = "600 22px 'Cinzel', Georgia, serif";
       ctx.fillStyle = '#888';
-      ctx.fillText(String(ch.number).toUpperCase(), x + w / 2, ty + 48);
+      ctx.fillText(String(ch.number).toUpperCase(), x + w / 2, ty + 96);
     }
-    ctx.font = PT.fontDisplayTitle;
+    ctx.font = "44px 'Cinzel', Georgia, serif";
     ctx.fillStyle = '#2a2016';
-    ctx.fillText(ch.title || '', x + w / 2, ty + 82);
+    ctx.fillText(ch.title || '', x + w / 2, ty + 164);
     if (ch.epigraph) {
       ctx.font = PT.fontBodyItalic;
       ctx.fillStyle = '#666';
       const ew = ch.epigraph.split(/\s+/).filter(Boolean);
       const epLines = wrapWordsToLines(ctx, ew, w - PT.marginX * 2);
-      let ey = ty + 112;
+      let ey = ty + 224;
       for (let ei = 0; ei < epLines.length; ei++) {
         drawJustifiedLine(ctx, epLines[ei], x + PT.marginX, ey + PT.lineHeight * 0.85, w - PT.marginX * 2, false);
         ey += PT.lineHeight;
@@ -441,14 +489,14 @@ function renderPageColumn(ctx, page, pages, chapters, firstNumIdx, colRect) {
   }
 }
 
-/** Bottom folio (Pretext .page-number), 9pt-style tabular numerals. */
+/** Bottom folio (Pretext .page-number). */
 function drawFolioNumber(ctx, x, y, w, h, pageIndex, showFolio, folioNum) {
   if (!showFolio || !folioNum) return;
   ctx.save();
-  ctx.font = "12px 'EB Garamond', Georgia, serif";
+  ctx.font = FOLIO_FONT_PX + "px 'EB Garamond', Georgia, serif";
   ctx.fillStyle = '#888';
   ctx.textBaseline = 'alphabetic';
-  const bottomY = y + h - 12;
+  const bottomY = y + h - FOLIO_FONT_PX;
   if (pageIndex % 2 === 0) {
     ctx.textAlign = 'left';
     ctx.fillText(String(folioNum), x + PT.marginX, bottomY);
@@ -566,8 +614,15 @@ scene.fog = new THREE.Fog(0x091408, 10, 30);
 scene.background = new THREE.Color(0x080f05);
 
 const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 60);
-camera.position.set(0, 2.9, 5.2);
-camera.lookAt(0, 0.62, 0);
+const SCENE_CAMERA_POS = new THREE.Vector3(0, 2.9, 5.2);
+const SCENE_LOOK_AT = new THREE.Vector3(0, 0.62, 0);
+camera.position.copy(SCENE_CAMERA_POS);
+camera.lookAt(SCENE_LOOK_AT);
+const tmpCamOrient = new THREE.Object3D();
+tmpCamOrient.position.copy(SCENE_CAMERA_POS);
+tmpCamOrient.lookAt(SCENE_LOOK_AT);
+const RETURN_SCENE_QUAT = new THREE.Quaternion();
+RETURN_SCENE_QUAT.copy(tmpCamOrient.quaternion);
 
 /* ── PROCEDURAL TEXTURES ── */
 function pageTex() {
@@ -1229,8 +1284,129 @@ const steamMat = new THREE.PointsMaterial({
 const teaSteam = new THREE.Points(steamGeo, steamMat);
 teaSteam.renderOrder = 6;
 teaGroup.add(teaSteam);
+teaGroup.userData.isTeaGroup = true;
+[cupOuter, cupBottom, teaInner, teaSurface, teaBottomInner, saucer].forEach(function (m) {
+  if (m) m.userData.isTea = true;
+});
 
 tGroup.add(teaGroup);
+
+let teaSipCount = 0;
+const teaSurfaceBaseY = teaLevelY;
+const teaBottomInnerBaseY = cupCy - cupHalfH + 0.0015;
+const TEA_SIP_DROP_1 = 0.016;
+const TEA_SIP_DROP_2 = 0.034;
+
+function applyTeaSipVisual() {
+  const d = teaSipCount;
+  if (d === 0) {
+    teaSurface.visible = true;
+    teaBottomInner.visible = true;
+    teaSurface.position.y = teaSurfaceBaseY;
+    teaBottomInner.position.y = teaBottomInnerBaseY;
+    teaLiquidMat.opacity = 0.93;
+    return;
+  }
+  if (d < 3) {
+    teaSurface.visible = true;
+    teaBottomInner.visible = true;
+    const drop = d === 1 ? TEA_SIP_DROP_1 : TEA_SIP_DROP_2;
+    teaSurface.position.y = teaSurfaceBaseY - drop;
+    teaBottomInner.position.y = teaBottomInnerBaseY - drop * 0.55;
+    teaLiquidMat.opacity = d === 1 ? 0.68 : 0.38;
+    return;
+  }
+  teaSurface.visible = false;
+  teaBottomInner.visible = false;
+  teaLiquidMat.opacity = 0;
+}
+
+function playTeaSipSoundFallback() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = Math.floor(ctx.sampleRate * 0.09);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.25));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.frequency.setValueAtTime(1100, ctx.currentTime);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.42, ctx.currentTime + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.09);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(ctx.destination);
+    src.start();
+    src.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.warn('Tea sip sound failed', e);
+  }
+}
+
+function playTeaSipSound() {
+  tryPlayTeaMp3('sip.m4a', 1, playTeaSipSoundFallback);
+}
+
+function pickMaleVoice() {
+  const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  let v =
+    voices.find(function (x) {
+      return /male|daniel|fred|david|mark|alex|en-gb|en-us.*male/i.test(x.name + ' ' + (x.lang || ''));
+    }) || null;
+  if (!v) {
+    v = voices.find(function (x) {
+      return /^en/i.test(x.lang || '');
+    });
+  }
+  return v || voices[0] || null;
+}
+
+function playTeaSatisfactionSoundFallback() {
+  try {
+    if (!window.speechSynthesis) return;
+    const speak = function () {
+      const u = new SpeechSynthesisUtterance('aaaah');
+      u.rate = 0.78;
+      u.pitch = 0.45;
+      u.volume = 0.92;
+      const v = pickMaleVoice();
+      if (v) u.voice = v;
+      speechSynthesis.speak(u);
+    };
+    if (speechSynthesis.getVoices().length) speak();
+    else speechSynthesis.addEventListener('voiceschanged', speak, { once: true });
+  } catch (e) {
+    console.warn('Tea satisfaction voice failed', e);
+  }
+}
+
+function playTeaSatisfactionSound() {
+  tryPlayTeaMp3('Ahhhh.mp3', 1, playTeaSatisfactionSoundFallback);
+}
+
+function handleTeaSip() {
+  if (teaSipCount >= 3) {
+    teaSipCount = 0;
+    teaSteam.visible = true;
+    steamMat.opacity = 0.32;
+    applyTeaSipVisual();
+    return;
+  }
+  teaSipCount++;
+  if (teaSipCount === 3) {
+    playTeaSatisfactionSound();
+    teaSteam.visible = false;
+  } else {
+    playTeaSipSound();
+  }
+  applyTeaSipVisual();
+}
 
 const TABLE_TOP_Y = 0.5 + 0.06;
 const BOOK_BOT_LOCAL_Y = -0.14 - 0.055 / 2;
@@ -1243,9 +1419,13 @@ const COVER_OPEN_ANGLE = -Math.PI * 0.998;
 const bGroup = new THREE.Group();
 /** Front/back cover board width (original scene — not tied to reading face width). */
 const COVER_BOARD_WIDTH = 1.5;
-/** When cover is open: nudge front board (~60px right, ~30px down @ ~1920px). */
-const COVER_OPEN_SHIFT_X = 60 * 0.00205;
-const COVER_OPEN_SHIFT_Y = -30 * (0.125 / 15);
+/** When cover is open: nudge front board (sliders #coverTuning, or defaults below). */
+const COVER_PX_TO_WORLD_X = 0.00205;
+const COVER_PX_TO_WORLD_Z = 0.00205;
+const COVER_PX_TO_WORLD_Y = 0.125 / 15;
+let coverOpenPxRight = -39;
+let coverOpenPxDown = 9;
+let coverOpenPxZ = 22;
 /** One reading page face width (each half of an open spread); ~2× the prior 0.69. */
 const BOOK_PAGE_WIDTH = 1.38;
 const READING_PAGE_Y = 0.22;
@@ -1465,6 +1645,8 @@ const camTargetPos = new THREE.Vector3();
 const camStartTgt = new THREE.Vector3();
 const camTargetTgt = new THREE.Vector3();
 const camCurTgt = new THREE.Vector3();
+const returnStartPos = new THREE.Vector3();
+const returnStartQuat = new THREE.Quaternion();
 const tmpDir = new THREE.Vector3();
 const SPINE_LOCAL = new THREE.Vector3(-0.765, 0.04, 0);
 const spineWorld = new THREE.Vector3();
@@ -1483,6 +1665,10 @@ let openSoundPlayed = false;
 const BOOK_OPEN_SPEED = 0.58;
 let spreadIndex = 0;
 let MAX_SPREADS = 1;
+let pageTurnHintDismissed = false;
+let isReturningToScene = false;
+let returnAnimT = 0;
+const RETURN_TO_SCENE_DURATION = 1.35;
 
 function easeInOut(t) {
   return t * t * (3 - 2 * t);
@@ -1560,9 +1746,62 @@ function updateBookFromProgress() {
   coverPivot.rotation.z = s * COVER_OPEN_ANGLE;
   bGroup.rotation.y = BOOK_START_ROT_Y * (1 - s);
   titlePivot.rotation.z = 0;
-  bTop.position.x = COVER_BOARD_WIDTH / 2 + s * COVER_OPEN_SHIFT_X;
-  bTop.position.y = s * COVER_OPEN_SHIFT_Y;
+  const shX = coverOpenPxRight * COVER_PX_TO_WORLD_X;
+  const shY = -coverOpenPxDown * COVER_PX_TO_WORLD_Y;
+  const shZ = coverOpenPxZ * COVER_PX_TO_WORLD_Z;
+  bTop.position.x = COVER_BOARD_WIDTH / 2 + s * shX;
+  bTop.position.y = s * shY;
+  bTop.position.z = s * shZ;
 }
+
+function finishReturnToSceneView() {
+  interactionMode = 'scene';
+  bookFloatEnabled = true;
+  cameraAnim = 0;
+  isOpeningBook = false;
+  openProgress = 0;
+  spreadIndex = 0;
+  pageTurnHintDismissed = false;
+  openSoundPlayed = false;
+  bGroup.position.y = BOOK_GROUP_Y;
+  bGroup.rotation.y = BOOK_START_ROT_Y;
+  updateBookFromProgress();
+  applySpreadTextures();
+  camera.position.copy(SCENE_CAMERA_POS);
+  camera.quaternion.copy(RETURN_SCENE_QUAT);
+  teaSipCount = 0;
+  teaSteam.visible = true;
+  steamMat.opacity = 0.32;
+  applyTeaSipVisual();
+  const prompt = document.getElementById('bookPrompt');
+  if (prompt) {
+    prompt.textContent = 'Click the cover to open the book';
+    prompt.classList.remove('visible');
+  }
+  const exitBtn = document.getElementById('sceneExitBtn');
+  if (exitBtn) {
+    exitBtn.classList.remove('visible');
+    exitBtn.hidden = true;
+  }
+}
+
+function startReturnToScene() {
+  if (isReturningToScene || interactionMode === 'scene') return;
+  returnStartPos.copy(camera.position);
+  returnStartQuat.copy(camera.quaternion);
+  returnAnimT = 0;
+  isReturningToScene = true;
+}
+
+(function initSceneExitButton() {
+  const btn = document.getElementById('sceneExitBtn');
+  if (!btn) return;
+  btn.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    startReturnToScene();
+  });
+})();
 
 function hitIsCoverMesh(o) {
   let p = o;
@@ -1579,15 +1818,9 @@ function changeSpread(delta) {
   if (next < 0 || next >= MAX_SPREADS) return;
   spreadIndex = next;
   applySpreadTextures();
+  pageTurnHintDismissed = true;
   const prompt = document.getElementById('bookPrompt');
-  if (prompt) {
-    if (spreadIndex >= MAX_SPREADS - 1) {
-      prompt.classList.remove('visible');
-    } else {
-      prompt.textContent = 'Click to turn the page';
-      prompt.classList.add('visible');
-    }
-  }
+  if (prompt) prompt.classList.remove('visible');
 }
 
 function applySpreadTextures() {
@@ -1595,32 +1828,25 @@ function applySpreadTextures() {
   const open = openProgress >= 0.999;
   titleMat.map = spreadTexMaps[si];
   titleMat.needsUpdate = true;
-  if (si === 0) {
-    titlePage.visible = open;
-    disposePagePlaneMaps();
-    leftPagePlane.visible = false;
-    rightPagePlane.visible = false;
-  } else {
-    titlePage.visible = false;
-    disposePagePlaneMaps();
-    const base = spreadTexMaps[si];
-    const leftTex = base.clone();
-    leftTex.repeat.set(0.5, 1);
-    leftTex.offset.set(0, 0);
-    const rightTex = base.clone();
-    rightTex.repeat.set(0.5, 1);
-    rightTex.offset.set(0.5, 0);
-    leftPageMat.map = leftTex;
-    rightPageMat.map = rightTex;
-    leftPageMat.needsUpdate = true;
-    rightPageMat.needsUpdate = true;
-    leftPagePlane.visible = open;
-    rightPagePlane.visible = open;
-  }
+  titlePage.visible = false;
+  disposePagePlaneMaps();
+  const base = spreadTexMaps[si];
+  const leftTex = base.clone();
+  leftTex.repeat.set(0.5, 1);
+  leftTex.offset.set(0, 0);
+  const rightTex = base.clone();
+  rightTex.repeat.set(0.5, 1);
+  rightTex.offset.set(0.5, 0);
+  leftPageMat.map = leftTex;
+  rightPageMat.map = rightTex;
+  leftPageMat.needsUpdate = true;
+  rightPageMat.needsUpdate = true;
+  leftPagePlane.visible = open;
+  rightPagePlane.visible = open;
 }
 
 canvas.addEventListener('pointerdown', (ev) => {
-  if (interactionMode === 'cameraToBook') return;
+  if (interactionMode === 'cameraToBook' || isReturningToScene) return;
   setPointer(ev);
   raycaster.setFromCamera(pointer, camera);
 
@@ -1634,6 +1860,14 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
 
   if (interactionMode === 'readyToOpen' || interactionMode === 'reading') {
+    if (interactionMode === 'readyToOpen' && openProgress < 0.999 && !isOpeningBook) {
+      const teaHits = raycaster.intersectObjects([teaGroup], true);
+      if (teaHits.length > 0) {
+        ev.preventDefault();
+        handleTeaSip();
+        return;
+      }
+    }
     const coverHits = raycaster.intersectObjects([coverPivot], true);
     if (coverHits.length > 0 && !isOpeningBook && openProgress < 0.999) {
       ev.preventDefault();
@@ -1653,17 +1887,6 @@ canvas.addEventListener('pointerdown', (ev) => {
         const o = hits[0].object;
         if (hitIsCoverMesh(o)) return;
         ev.preventDefault();
-        if (spreadIndex === 0) {
-          const titleHit = raycaster.intersectObject(titlePage, false);
-          if (titleHit.length > 0) {
-            if (pointer.x < 0) return;
-            changeSpread(1);
-            return;
-          }
-          if (pointer.x < 0) return;
-          changeSpread(1);
-          return;
-        }
         const pageHits = raycaster.intersectObjects([leftPagePlane, rightPagePlane], false);
         if (pageHits.length > 0) {
           if (pageHits[0].object === leftPagePlane) changeSpread(-1);
@@ -1846,13 +2069,30 @@ function animate() {
     interactionMode = 'reading';
     applySpreadTextures();
     const prompt = document.getElementById('bookPrompt');
-    if (prompt) {
+    if (prompt && !pageTurnHintDismissed) {
       prompt.textContent = 'Click to turn the page';
       prompt.classList.add('visible');
     }
   }
 
-  if (!bookFloatEnabled) {
+  const sceneExitBtn = document.getElementById('sceneExitBtn');
+  if (sceneExitBtn) {
+    const showExit = interactionMode !== 'scene' && !isReturningToScene;
+    sceneExitBtn.classList.toggle('visible', showExit);
+    sceneExitBtn.hidden = !showExit;
+  }
+
+  if (isReturningToScene) {
+    returnAnimT += dt;
+    const u = Math.min(1, returnAnimT / RETURN_TO_SCENE_DURATION);
+    const e = easeInOut(u);
+    camera.position.lerpVectors(returnStartPos, SCENE_CAMERA_POS, e);
+    camera.quaternion.slerpQuaternions(returnStartQuat, RETURN_SCENE_QUAT, e);
+    if (u >= 1) {
+      isReturningToScene = false;
+      finishReturnToSceneView();
+    }
+  } else if (!bookFloatEnabled) {
     spineWorldPoint(spineWorld);
     if (interactionMode === 'cameraToBook') {
       camTargetTgt.copy(spineWorld);
@@ -1886,22 +2126,24 @@ function animate() {
   ff.geometry.attributes.position.needsUpdate = true;
   ffMat.opacity = 0.45 + Math.sin(t*2.0)*0.35;
 
-  const sp = teaSteam.geometry.attributes.position.array;
-  const rise = 0.16;
-  const drift = 0.022;
-  for (let i = 0; i < STEAM_N; i++) {
-    const ph = (t * 0.28 + steamPh[i]) % 1;
-    const spread = 1 + ph * 0.55;
-    const wobble = Math.sin(t * 1.4 + steamPh[i] * 6.28) * drift * ph;
-    const wobble2 = Math.cos(t * 1.1 + i * 0.7) * drift * ph * 0.6;
-    const a = steamAng[i] + ph * 0.65 + Math.sin(t * 0.5 + i) * 0.08;
-    const r = steamRad[i] * spread;
-    sp[i * 3] = Math.cos(a) * r + wobble;
-    sp[i * 3 + 1] = teaLevelY + 0.006 + ph * rise;
-    sp[i * 3 + 2] = Math.sin(a) * r + wobble2;
+  if (teaSteam.visible) {
+    const sp = teaSteam.geometry.attributes.position.array;
+    const rise = 0.16;
+    const drift = 0.022;
+    for (let i = 0; i < STEAM_N; i++) {
+      const ph = (t * 0.28 + steamPh[i]) % 1;
+      const spread = 1 + ph * 0.55;
+      const wobble = Math.sin(t * 1.4 + steamPh[i] * 6.28) * drift * ph;
+      const wobble2 = Math.cos(t * 1.1 + i * 0.7) * drift * ph * 0.6;
+      const a = steamAng[i] + ph * 0.65 + Math.sin(t * 0.5 + i) * 0.08;
+      const r = steamRad[i] * spread;
+      sp[i * 3] = Math.cos(a) * r + wobble;
+      sp[i * 3 + 1] = teaSurface.position.y + 0.006 + ph * rise;
+      sp[i * 3 + 2] = Math.sin(a) * r + wobble2;
+    }
+    teaSteam.geometry.attributes.position.needsUpdate = true;
+    steamMat.opacity = 0.14 + Math.sin(t * 0.9 + 0.3) * 0.06;
   }
-  teaSteam.geometry.attributes.position.needsUpdate = true;
-  steamMat.opacity = 0.14 + Math.sin(t * 0.9 + 0.3) * 0.06;
 
   if (bookFloatEnabled) {
     bGroup.position.y = BOOK_GROUP_Y + Math.sin(t*0.38)*0.004;

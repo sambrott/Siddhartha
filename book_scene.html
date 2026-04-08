@@ -19,9 +19,7 @@
 </style>
 </head>
 <body>
-<audio id="ambient" preload="auto" playsinline loop>
-  <source src="coqui_sounds.mp4" type="audio/mp4">
-</audio>
+<audio id="ambient" preload="auto" playsinline loop></audio>
 <div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
 <canvas id="c"></canvas>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -33,6 +31,10 @@
 function assetUrl(relativePath) {
   return new URL(relativePath, document.baseURI || document.location.href).href;
 }
+(function initAmbientSrc() {
+  const el = document.getElementById('ambient');
+  if (el) el.src = assetUrl('coqui_sounds.mp4');
+})();
 if (typeof THREE === 'undefined') {
   document.body.innerHTML = '<p style="color:#c8a060;font-family:Georgia;padding:2rem;">Three.js failed to load. Check your network and refresh.</p>';
   return;
@@ -245,15 +247,10 @@ const parchmentMat = new THREE.MeshStandardMaterial({
   metalness: 0.02,
   color: 0xffffff,
 });
-const frontCoverMat = new THREE.MeshStandardMaterial({
-  roughness: 0.48,
-  metalness: 0.04,
+/* Basic material so the cover art stays visible regardless of lighting angle (Standard looked near-black in spots). */
+const frontCoverMat = new THREE.MeshBasicMaterial({
   color: 0xffffff,
-  side: THREE.DoubleSide,
 });
-const bookCoverBoardMats = [
-  parchmentMat, parchmentMat, frontCoverMat, parchmentMat, parchmentMat, parchmentMat,
-];
 const bookParchmentMats = [
   parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat,
 ];
@@ -739,7 +736,7 @@ bGroup.add(titlePivot);
 
 const coverPivot = new THREE.Group();
 coverPivot.position.set(HINGE_X, READING_PAGE_Y, 0);
-const bTop = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), bookCoverBoardMats);
+const bTop = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), frontCoverMat);
 bTop.position.set(0.75, 0, 0);
 bTop.castShadow = bTop.receiveShadow = true;
 bTop.userData.isBookCover = true;
@@ -1029,6 +1026,7 @@ function applySpreadTextures() {
 }
 
 canvas.addEventListener('pointerdown', (ev) => {
+  startAudio().catch(function () {});
   if (interactionMode === 'cameraToBook') return;
   setPointer(ev);
   raycaster.setFromCamera(pointer, camera);
@@ -1086,7 +1084,7 @@ const COQUI_AUDIO_KEY = 'coqui_audio_ok';
 
 function fadeInAmbient(ambient, targetVol) {
   const start = performance.now();
-  const fadeMs = 3200;
+  const fadeMs = 900;
   function fadeIn() {
     const t = Math.min(1, (performance.now() - start) / fadeMs);
     ambient.volume = targetVol * t;
@@ -1099,31 +1097,78 @@ function startAudio() {
   if (audioOn) return Promise.resolve();
   const ambient = document.getElementById('ambient');
   if (!ambient) return Promise.reject(new Error('no ambient element'));
+  if (!ambient.src) {
+    ambient.src = assetUrl('coqui_sounds.mp4');
+  }
   ambient.loop = true;
-  const targetVol = 0.275;
-  ambient.volume = 0;
-  return ambient
-    .play()
-    .then(function () {
-      audioOn = true;
-      try {
-        sessionStorage.setItem(COQUI_AUDIO_KEY, '1');
-      } catch (e) {
-        /* private mode or disabled storage */
-      }
-      fadeInAmbient(ambient, targetVol);
-    })
-    .catch(function (err) {
+  const targetVol = 0.35;
+  function afterPlay() {
+    audioOn = true;
+    try {
+      sessionStorage.setItem(COQUI_AUDIO_KEY, '1');
+    } catch (e) {
+      /* private mode or disabled storage */
+    }
+    fadeInAmbient(ambient, targetVol);
+  }
+  function tryPlay() {
+    ambient.volume = 0;
+    const p = ambient.play();
+    if (p && typeof p.then === 'function') {
+      return p.then(afterPlay);
+    }
+    afterPlay();
+    return Promise.resolve();
+  }
+  function onMediaError() {
+    console.warn('Ambient <audio> load error', ambient.error);
+  }
+  if (!ambient.error) {
+    ambient.addEventListener('error', onMediaError, { once: true });
+  }
+  if (ambient.readyState >= 2) {
+    return tryPlay().catch(function (err) {
       console.warn('Ambient playback failed', err);
       audioOn = false;
       throw err;
     });
+  }
+  return new Promise(function (resolve, reject) {
+    function cleanup() {
+      ambient.removeEventListener('canplay', onReady);
+      ambient.removeEventListener('error', onFail);
+    }
+    function onReady() {
+      cleanup();
+      tryPlay()
+        .then(resolve)
+        .catch(function (err) {
+          console.warn('Ambient playback failed', err);
+          audioOn = false;
+          reject(err);
+        });
+    }
+    function onFail() {
+      cleanup();
+      onMediaError();
+      audioOn = false;
+      reject(new Error('ambient media load failed'));
+    }
+    ambient.addEventListener('canplay', onReady, { once: true });
+    ambient.addEventListener('error', onFail, { once: true });
+    try {
+      ambient.load();
+    } catch (e) {
+      /* ignore */
+    }
+  });
 }
 
 function detachAudioWakeListeners() {
   window.removeEventListener('pointerdown', audioWakeHandler, true);
   window.removeEventListener('touchstart', audioWakeHandler, true);
   window.removeEventListener('keydown', audioWakeHandler, true);
+  window.removeEventListener('click', audioWakeHandler, true);
 }
 
 function audioWakeHandler() {
@@ -1141,22 +1186,7 @@ function audioWakeHandler() {
 window.addEventListener('pointerdown', audioWakeHandler, true);
 window.addEventListener('touchstart', audioWakeHandler, true);
 window.addEventListener('keydown', audioWakeHandler, true);
-
-(function initAmbientFromBaseUri() {
-  const ambient = document.getElementById('ambient');
-  if (!ambient) return;
-  ambient.querySelectorAll('source').forEach(function (s) {
-    const rel = s.getAttribute('src');
-    if (rel && !/^(?:https?:|blob:|data:)/i.test(rel)) {
-      s.src = assetUrl(rel.replace(/^\.\//, ''));
-    }
-  });
-  try {
-    ambient.load();
-  } catch (e) {
-    /* ignore */
-  }
-})();
+window.addEventListener('click', audioWakeHandler, true);
 
 if (sessionStorage.getItem(COQUI_AUDIO_KEY) === '1') {
   startAudio()

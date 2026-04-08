@@ -169,38 +169,9 @@
   }
   @media (pointer: coarse) {
     #soundToggle:active,
-    #sceneExitBtn:active,
-    #pdfExportBtn:active {
+    #sceneExitBtn:active {
       opacity: 0.92;
     }
-  }
-  #pdfExportBtn {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 62px);
-    right: max(14px, env(safe-area-inset-right, 0px));
-    z-index: 10;
-    padding: 8px 12px;
-    min-height: 40px;
-    font-family: Georgia, serif;
-    font-size: 0.62rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(232, 213, 160, 0.72);
-    background: rgba(0, 0, 0, 0.38);
-    border: 1px solid rgba(200, 160, 96, 0.28);
-    border-radius: 3px;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: color 0.2s, border-color 0.2s, background 0.2s, opacity 0.2s;
-  }
-  #pdfExportBtn:hover:not(:disabled) {
-    color: rgba(232, 213, 160, 0.95);
-    border-color: rgba(200, 160, 96, 0.48);
-    background: rgba(0, 0, 0, 0.52);
-  }
-  #pdfExportBtn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
   /* Mobile portrait: ask user to rotate — experience is tuned for landscape */
   #rotateHint {
@@ -266,7 +237,6 @@
 <audio id="ambient" preload="auto" playsinline loop></audio>
 <button type="button" id="soundToggle" aria-pressed="false" aria-label="Ambient sound off. Click to turn on." title="Ambient sound">Sound · off</button>
 <button type="button" id="sceneExitBtn" hidden aria-label="Return to scene">×</button>
-<button type="button" id="pdfExportBtn" disabled aria-label="Download PDF of all pretext pages" title="Export pretext to PDF">PDF</button>
 <div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
 <div id="rotateHint" role="region" aria-label="Rotate your device">
   <span class="rotate-icon" aria-hidden="true">📱</span>
@@ -274,7 +244,6 @@
   <p>This scene is laid out for landscape. Turn your device sideways to continue.</p>
 </div>
 <canvas id="c"></canvas>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
@@ -813,233 +782,11 @@ async function loadPretextPages() {
     titleMat.needsUpdate = true;
     applySpreadTextures();
     cachedPretextChapters = chapters;
-    const pdfBtn = document.getElementById('pdfExportBtn');
-    if (pdfBtn) pdfBtn.disabled = false;
   } catch (err) {
     console.warn('Pretext chapters not loaded; using placeholder title page.', err);
     cachedPretextChapters = null;
-    const pdfBtn = document.getElementById('pdfExportBtn');
-    if (pdfBtn) pdfBtn.disabled = true;
   }
 }
-
-function getJsPDFConstructor() {
-  if (window.jspdf && window.jspdf.jsPDF) return window.jspdf.jsPDF;
-  if (typeof window.jsPDF !== 'undefined') return window.jsPDF;
-  return null;
-}
-
-function pdfAppendParagraphBlock(doc, pageW, pageH, margin, maxW, startY, paragraphs, paraOpts) {
-  const lineH = 5.6;
-  const indentMm = 3;
-  let y = startY;
-  for (let pi = 0; pi < paragraphs.length; pi++) {
-    const raw = paragraphs[pi];
-    if (!String(raw).trim()) continue;
-    const para = String(raw).trim();
-    const noIndent = paraOpts && paraOpts.noIndentFirst && pi === 0;
-    const x0 = margin + (noIndent ? 0 : indentMm);
-    const wUse = maxW - (noIndent ? 0 : indentMm);
-    if (isSectionHeading(para)) {
-      doc.setFont('times', 'bold');
-      doc.setFontSize(12);
-      if (y + lineH * 2 > pageH - margin) {
-        doc.addPage();
-        y = margin;
-      }
-      doc.text(para, pageW / 2, y + 5, { align: 'center' });
-      y += 10;
-      doc.setFont('times', 'normal');
-      doc.setFontSize(11);
-      continue;
-    }
-    if (para.indexOf('\n') >= 0) {
-      const verseLines = para
-        .split(/\n/)
-        .map(function (s) {
-          return s.trim();
-        })
-        .filter(Boolean);
-      doc.setFont('times', 'normal');
-      doc.setFontSize(11);
-      for (let vi = 0; vi < verseLines.length; vi++) {
-        if (y + lineH > pageH - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        doc.text(verseLines[vi], pageW / 2, y + 5, { align: 'center' });
-        y += lineH;
-      }
-      y += 2;
-      continue;
-    }
-    doc.setFont('times', 'normal');
-    doc.setFontSize(11);
-    const lines = doc.splitTextToSize(para, wUse);
-    for (let li = 0; li < lines.length; li++) {
-      if (y + lineH > pageH - margin) {
-        doc.addPage();
-        y = margin;
-      }
-      doc.text(lines[li], x0, y + 5);
-      y += lineH;
-    }
-    y += 2;
-  }
-  return y;
-}
-
-async function exportPretextPdf() {
-  const btn = document.getElementById('pdfExportBtn');
-  const JsPDF = getJsPDFConstructor();
-  if (!JsPDF) {
-    alert('PDF library failed to load. Check your network and refresh.');
-    return;
-  }
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = '…';
-  }
-  try {
-    let chapters = cachedPretextChapters;
-    if (!chapters) {
-      const res = await fetch(assetUrl('pretext-chapters.json'));
-      if (!res.ok) throw new Error('pretext-chapters.json ' + res.status);
-      chapters = await res.json();
-    }
-    if (!Array.isArray(chapters) || chapters.length === 0) throw new Error('No chapters');
-    const pages = buildPretextPages(chapters);
-    const firstNumIdx = getFirstNumberedPageIndex(pages);
-    const doc = new JsPDF({ unit: 'mm', format: 'a4', compress: true });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 18;
-    const maxW = pageW - margin * 2;
-    let first = true;
-    for (let pi = 0; pi < pages.length; pi++) {
-      const page = pages[pi];
-      if (page.type === 'blank') continue;
-      if (!first) doc.addPage();
-      first = false;
-      let y = margin;
-      if (page.type === 'title') {
-        doc.setFont('times', 'bold');
-        doc.setFontSize(24);
-        doc.text(BOOK_META.title, pageW / 2, y + 14, { align: 'center' });
-        doc.setFont('times', 'italic');
-        doc.setFontSize(14);
-        doc.text(BOOK_META.author, pageW / 2, y + 26, { align: 'center' });
-        if (BOOK_META.year) {
-          doc.setFont('times', 'normal');
-          doc.setFontSize(11);
-          doc.setTextColor(100);
-          doc.text(String(BOOK_META.year), pageW / 2, y + 36, { align: 'center' });
-          doc.setTextColor(0);
-        }
-        doc.setFont('times', 'normal');
-        continue;
-      }
-      if (page.type === 'toc') {
-        doc.setFont('times', 'bold');
-        doc.setFontSize(16);
-        doc.text('Contents', pageW / 2, y + 10, { align: 'center' });
-        doc.setFont('times', 'normal');
-        doc.setFontSize(11);
-        y = margin + 22;
-        chapters.forEach(function (ch) {
-          const startIdx = pages.findIndex(function (p) {
-            return p.type === 'chapter-start' && p.chapter && p.chapter.id === ch.id;
-          });
-          const num =
-            startIdx >= 0 && firstNumIdx <= startIdx ? String(startIdx - firstNumIdx + 1) : '—';
-          const title = ch.title || 'Untitled';
-          if (y + 8 > pageH - margin) {
-            doc.addPage();
-            y = margin;
-          }
-          doc.text(title + '  ·  ' + num, margin, y + 5);
-          y += 7;
-        });
-        continue;
-      }
-      if (page.type === 'chapter-start') {
-        const ch = page.chapter;
-        doc.setFont('times', 'bold');
-        doc.setFontSize(12);
-        if (ch.number) {
-          doc.text(String(ch.number).toUpperCase(), pageW / 2, y + 10, { align: 'center' });
-        }
-        doc.setFontSize(18);
-        doc.text(ch.title || '', pageW / 2, y + 20, { align: 'center' });
-        doc.setFont('times', 'normal');
-        doc.setFontSize(11);
-        y += 32;
-        if (ch.epigraph) {
-          doc.setFont('times', 'italic');
-          const epLines = doc.splitTextToSize(String(ch.epigraph), maxW * 0.88);
-          for (let ei = 0; ei < epLines.length; ei++) {
-            if (y + 7 > pageH - margin) {
-              doc.addPage();
-              y = margin;
-            }
-            doc.text(epLines[ei], pageW / 2, y + 5, { align: 'center' });
-            y += 6;
-          }
-          doc.setFont('times', 'normal');
-          y += 4;
-        }
-        if (y + 6 > pageH - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        doc.setDrawColor(190);
-        doc.setLineWidth(0.2);
-        doc.line(margin, y, pageW - margin, y);
-        y += 10;
-        const chunk = page.bodyChunk || '';
-        const paras = chunk
-          .split(/\n\n+/)
-          .map(function (p) {
-            return p.trim();
-          })
-          .filter(Boolean);
-        pdfAppendParagraphBlock(doc, pageW, pageH, margin, maxW, y, paras, { noIndentFirst: true });
-        continue;
-      }
-      if (page.type === 'body') {
-        const ch = page.chapter;
-        const paras = String(ch.body || '')
-          .split(/\n\n+/)
-          .map(function (p) {
-            return p.trim();
-          })
-          .filter(Boolean);
-        pdfAppendParagraphBlock(doc, pageW, pageH, margin, maxW, margin, paras, {
-          noIndentFirst: !!page.isFirstBodyChunk,
-        });
-      }
-    }
-    doc.save('Siddhartha-pretext.pdf');
-  } catch (e) {
-    console.warn('PDF export failed', e);
-    alert('Could not export PDF. Check the console for details.');
-  } finally {
-    if (btn) {
-      btn.disabled = !cachedPretextChapters;
-      btn.textContent = 'PDF';
-    }
-  }
-}
-
-(function initPdfExportButton() {
-  const btn = document.getElementById('pdfExportBtn');
-  if (!btn) return;
-  btn.addEventListener('click', function (ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    exportPretextPdf();
-  });
-})();
 
 /* ── SCENE / CAMERA ── */
 const scene = new THREE.Scene();
@@ -2242,9 +1989,18 @@ const tmpDir = new THREE.Vector3();
 const SPINE_LOCAL = new THREE.Vector3(-0.765, 0.04, 0);
 const spineWorld = new THREE.Vector3();
 const camOffScratch = new THREE.Vector3();
-/** Reading pose: move camera ~20% closer when the book is open (lerp with openProgress). */
+/** Reading pose: move camera closer when the book is open (lerp with openProgress). */
 const CAM_READING_ZOOM = 1.38;
+/** Mobile landscape: gentler zoom-in so the full spread stays readable on a short wide screen. */
+const CAM_READING_ZOOM_MOBILE_LANDSCAPE = 1.04;
 const CAM_OFFSET_SPREAD = new THREE.Vector3(0, 4.35, 0.05);
+
+function getCamReadingZoom() {
+  if (isMobilePerfProfile() && window.innerWidth > window.innerHeight) {
+    return CAM_READING_ZOOM_MOBILE_LANDSCAPE;
+  }
+  return CAM_READING_ZOOM;
+}
 
 function spineWorldPoint(out) {
   bGroup.updateMatrixWorld(true);
@@ -2804,7 +2560,7 @@ function animate() {
         if (prompt) prompt.classList.add('visible');
       }
     } else if (interactionMode === 'readyToOpen' || interactionMode === 'reading') {
-      const camZoom = THREE.MathUtils.lerp(1, 1 / CAM_READING_ZOOM, openProgress);
+      const camZoom = THREE.MathUtils.lerp(1, 1 / getCamReadingZoom(), openProgress);
       camOffScratch.copy(CAM_OFFSET_SPREAD).multiplyScalar(camZoom);
       camera.position.copy(spineWorld).add(camOffScratch);
       camera.lookAt(spineWorld);

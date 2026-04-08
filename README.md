@@ -24,7 +24,8 @@ Import the GitHub repo, leave **Root Directory** empty, set **Framework Preset**
 | `book_scene.html` | Optional redirect to `/` for old links |
 | `frog.glb` | Coquí frog model |
 | `coqui_sounds.mp4` | Ambient coquí audio (no spaces — works on GitHub Pages) |
-| `siddhartha_cover.jpg` | Front cover art (outer face only) |
+| `siddhartha_cover.jpg` | Front cover art (outer face of the front board) |
+| `book_cover_inner.jpg` | Parchment-style texture on the inside/back of the front cover board |
 | Parchment | Generated in code (`parchmentBoardTex`) — no PNG required |
 
 Optional: `Untitled-1.jpg` (reference only).

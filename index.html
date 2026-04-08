@@ -279,32 +279,48 @@ const parchmentMat = new THREE.MeshStandardMaterial({
 const frontCoverMat = new THREE.MeshBasicMaterial({
   color: 0xffffff,
 });
-/* BoxGeometry materials: +x,-x, +y,-y, +z,-z — only +y (index 2) is the outer front cover face. */
+const innerCoverMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+});
+/* BoxGeometry materials: +x,-x, +y,-y, +z,-z — index 2 (+y) outer front cover; index 3 (-y) inside of front board. */
 const bookCoverBoardMats = [
   parchmentMat,
   parchmentMat,
   frontCoverMat,
-  parchmentMat,
+  innerCoverMat,
   parchmentMat,
   parchmentMat,
 ];
 const bookParchmentMats = [
   parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat,
 ];
-(function loadFrontCover() {
+(function loadCoverTextures() {
   const texLoader = new THREE.TextureLoader();
   texLoader.setCrossOrigin('anonymous');
+  function applyTex(tex, mat) {
+    tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    tex.encoding = THREE.sRGBEncoding;
+    mat.map = tex;
+    mat.needsUpdate = true;
+  }
   texLoader.load(
     assetUrl('siddhartha_cover.jpg'),
     function (tex) {
-      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-      tex.encoding = THREE.sRGBEncoding;
-      frontCoverMat.map = tex;
-      frontCoverMat.needsUpdate = true;
+      applyTex(tex, frontCoverMat);
     },
     undefined,
     function () {
-      console.warn('siddhartha_cover.jpg missing — front cover uses solid color');
+      console.warn('siddhartha_cover.jpg missing — outer front cover uses solid color');
+    },
+  );
+  texLoader.load(
+    assetUrl('book_cover_inner.jpg'),
+    function (tex) {
+      applyTex(tex, innerCoverMat);
+    },
+    undefined,
+    function () {
+      console.warn('book_cover_inner.jpg missing — inside of front cover uses solid color');
     },
   );
 })();

@@ -248,10 +248,19 @@ const parchmentMat = new THREE.MeshStandardMaterial({
   metalness: 0.02,
   color: 0xffffff,
 });
-/* Basic material so the cover art stays visible regardless of lighting angle (Standard looked near-black in spots). */
+/* Basic material so the cover art stays visible regardless of lighting angle. */
 const frontCoverMat = new THREE.MeshBasicMaterial({
   color: 0xffffff,
 });
+/* BoxGeometry materials: +x,-x, +y,-y, +z,-z — only +y (index 2) is the outer front cover face. */
+const bookCoverBoardMats = [
+  parchmentMat,
+  parchmentMat,
+  frontCoverMat,
+  parchmentMat,
+  parchmentMat,
+  parchmentMat,
+];
 const bookParchmentMats = [
   parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat,
 ];
@@ -259,7 +268,7 @@ const bookParchmentMats = [
   const texLoader = new THREE.TextureLoader();
   texLoader.setCrossOrigin('anonymous');
   texLoader.load(
-    assetUrl('siddhartha_cover.png'),
+    assetUrl('siddhartha_cover.jpg'),
     function (tex) {
       tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
       tex.encoding = THREE.sRGBEncoding;
@@ -268,7 +277,7 @@ const bookParchmentMats = [
     },
     undefined,
     function () {
-      console.warn('siddhartha_cover.png missing — front cover uses solid color');
+      console.warn('siddhartha_cover.jpg missing — front cover uses solid color');
     },
   );
 })();
@@ -739,7 +748,7 @@ bGroup.add(titlePivot);
 
 const coverPivot = new THREE.Group();
 coverPivot.position.set(HINGE_X, READING_PAGE_Y, 0);
-const bTop = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), frontCoverMat);
+const bTop = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), bookCoverBoardMats);
 bTop.position.set(0.75, 0, 0);
 bTop.castShadow = bTop.receiveShadow = true;
 bTop.userData.isBookCover = true;

@@ -2,11 +2,24 @@
 
 Interactive 3D book scene (Three.js): tropical table, coquí frog, tea steam, and ambient audio.
 
-Open `book_scene.html` in a browser (local server recommended for assets and audio).
+## Run locally
 
-## Assets (same folder as the HTML)
+Serve this folder over HTTP (needed for `frog.glb`, textures, and audio), for example:
 
-- `frog.glb`, `coqui sounds.mp4`
-- Optional reference images: `Untitled-1.jpg`, `book coverjpg.jpg`
+```bash
+npx --yes serve .
+```
 
-Add `parchment_texture.png` and `siddhartha_cover.png` beside `book_scene.html` for the book materials to load (or the scene will wait on missing textures).
+Then open the URL shown in the terminal.
+
+## Assets (tracked in repo)
+
+| File | Purpose |
+|------|---------|
+| `book_scene.html` | Scene |
+| `frog.glb` | Coquí frog model |
+| `coqui_sounds.mp4` | Ambient coquí audio (no spaces — works on GitHub Pages) |
+| `siddhartha_cover.jpg` | Front cover art (from `book coverjpg.jpg`) |
+| Parchment | Generated in code (`parchmentBoardTex`) — no PNG required |
+
+Optional: `Untitled-1.jpg`, `book coverjpg.jpg` (reference only).

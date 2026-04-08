@@ -29,6 +29,10 @@
 <script>
 (function () {
 'use strict';
+/** Resolve assets relative to this document (works on GitHub Pages and subpaths). */
+function assetUrl(relativePath) {
+  return new URL(relativePath, document.baseURI || document.location.href).href;
+}
 if (typeof THREE === 'undefined') {
   document.body.innerHTML = '<p style="color:#c8a060;font-family:Georgia;padding:2rem;">Three.js failed to load. Check your network and refresh.</p>';
   return;
@@ -245,6 +249,7 @@ const frontCoverMat = new THREE.MeshStandardMaterial({
   roughness: 0.48,
   metalness: 0.04,
   color: 0xffffff,
+  side: THREE.DoubleSide,
 });
 const bookCoverBoardMats = [
   parchmentMat, parchmentMat, frontCoverMat, parchmentMat, parchmentMat, parchmentMat,
@@ -260,7 +265,7 @@ const bookParchmentMats = [
       console.warn('No cover image found — front cover uses solid color');
       return;
     }
-    const url = tryUrl[i];
+    const url = assetUrl(tryUrl[i]);
     new THREE.TextureLoader().load(
       url,
       function (tex) {
@@ -358,7 +363,7 @@ function loadCoquiGltf() {
   }
   const loader = new THREE.GLTFLoader();
   loader.load(
-    'frog.glb',
+    assetUrl('frog.glb'),
     function (gltf) {
       const model = gltf.scene;
       const cubeNodes = [];
@@ -1128,6 +1133,7 @@ function startAudio() {
 
 function detachAudioWakeListeners() {
   window.removeEventListener('pointerdown', audioWakeHandler, true);
+  window.removeEventListener('touchstart', audioWakeHandler, true);
   window.removeEventListener('keydown', audioWakeHandler, true);
 }
 
@@ -1144,7 +1150,24 @@ function audioWakeHandler() {
 }
 
 window.addEventListener('pointerdown', audioWakeHandler, true);
+window.addEventListener('touchstart', audioWakeHandler, true);
 window.addEventListener('keydown', audioWakeHandler, true);
+
+(function initAmbientFromBaseUri() {
+  const ambient = document.getElementById('ambient');
+  if (!ambient) return;
+  ambient.querySelectorAll('source').forEach(function (s) {
+    const rel = s.getAttribute('src');
+    if (rel && !/^(?:https?:|blob:|data:)/i.test(rel)) {
+      s.src = assetUrl(rel.replace(/^\.\//, ''));
+    }
+  });
+  try {
+    ambient.load();
+  } catch (e) {
+    /* ignore */
+  }
+})();
 
 if (sessionStorage.getItem(COQUI_AUDIO_KEY) === '1') {
   startAudio()

@@ -258,30 +258,19 @@ const bookParchmentMats = [
   parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat,
 ];
 (function loadFrontCover() {
-  const tryUrl = ['siddhartha_cover.png', 'siddhartha_cover.jpg'];
-  let i = 0;
-  function next() {
-    if (i >= tryUrl.length) {
-      console.warn('No cover image found — front cover uses solid color');
-      return;
-    }
-    const url = assetUrl(tryUrl[i]);
-    new THREE.TextureLoader().load(
-      url,
-      function (tex) {
-        tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        tex.encoding = THREE.sRGBEncoding;
-        frontCoverMat.map = tex;
-        frontCoverMat.needsUpdate = true;
-      },
-      undefined,
-      function () {
-        i += 1;
-        next();
-      },
-    );
-  }
-  next();
+  new THREE.TextureLoader().load(
+    assetUrl('siddhartha_cover.png'),
+    function (tex) {
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      tex.encoding = THREE.sRGBEncoding;
+      frontCoverMat.map = tex;
+      frontCoverMat.needsUpdate = true;
+    },
+    undefined,
+    function () {
+      console.warn('siddhartha_cover.png missing — front cover uses solid color');
+    },
+  );
 })();
 const pMat = new THREE.MeshStandardMaterial({
   map: pTex, roughness: 0.95, metalness: 0, color: 0xc09850,

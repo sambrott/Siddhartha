@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book — Tropical Scene</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+  #bookPrompt {
+    position: fixed; left: 50%; bottom: 10%; transform: translateX(-50%);
+    max-width: 90vw; padding: 12px 22px; border: 1px solid rgba(200,160,96,0.45);
+    background: rgba(0,0,0,0.55); color: #e8d5a0; font-family: Georgia, serif;
+    font-size: 0.88rem; letter-spacing: 0.06em; z-index: 9; pointer-events: none;
+    display: none; text-align: center;
+  }
+  #bookPrompt.visible { display: block; }
+</style>
+</head>
+<body>
+<audio id="ambient" preload="auto" playsinline loop crossorigin="anonymous"></audio>
+<div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
+<canvas id="c"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+(function () {
+'use strict';
+/** Resolve assets relative to this document (works on GitHub Pages and subpaths). */
+function assetUrl(relativePath) {
+  return new URL(relativePath, document.baseURI || document.location.href).href;
+}
+(function initAmbientSrc() {
+  const el = document.getElementById('ambient');
+  if (!el) return;
+  el.crossOrigin = 'anonymous';
+  el.src = assetUrl('coqui_sounds.mp4');
+})();
+if (typeof THREE === 'undefined') {
+  document.body.innerHTML = '<p style="color:#c8a060;font-family:Georgia;padding:2rem;">Three.js failed to load. Check your network and refresh.</p>';
+  return;
+}
+/* ── RENDERER (simple, reliable — not photoreal) ── */
+const canvas = document.getElementById('c');
+canvas.style.touchAction = 'none';
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: false,
+    powerPreference: 'default',
+    failIfMajorPerformanceCaveat: false,
+  });
+} catch (e) {
+  document.body.innerHTML = '<p style="color:#c8a060;font-family:Georgia;padding:2rem;">WebGL is not available.</p>';
+  return;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.physicallyCorrectLights = true;
+renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.toneMappingExposure = 1.35;
+renderer.setClearColor(0x060e04);
+
+/* ── SCENE / CAMERA ── */
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x091408, 10, 30);
+scene.background = new THREE.Color(0x080f05);
+
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 60);
+camera.position.set(0, 2.9, 5.2);
+camera.lookAt(0, 0.62, 0);
+
+/* ── PROCEDURAL TEXTURES ── */
+function pageTex() {
+  const cv = document.createElement('canvas'); cv.width=256; cv.height=512;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle='#d4b87a'; ctx.fillRect(0,0,256,512);
+  for (let y=0; y<512; y+=2.5) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(256,y);
+    ctx.strokeStyle=`rgba(140,85,20,${0.03+Math.random()*0.05})`; ctx.lineWidth=0.5; ctx.stroke();
+  }
+  for (let i=0;i<25;i++){
+    const gx=Math.random()*256, gy=Math.random()*512;
+    const g=ctx.createRadialGradient(gx,gy,0,gx,gy,25+Math.random()*40);
+    g.addColorStop(0,`rgba(110,60,8,${Math.random()*0.08})`); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,256,512);
+  }
+  return new THREE.CanvasTexture(cv);
+}
+
+function titleTex() {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 704;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ebe4d4'; ctx.fillRect(0, 0, 512, 704);
+  for (let y = 0; y < 704; y += 3) {
+    ctx.strokeStyle = `rgba(120,80,30,${0.02 + Math.random() * 0.03})`;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
+  }
+  ctx.fillStyle = '#1a1008';
+  ctx.font = 'bold 46px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Tropical Night', 256, 300);
+  ctx.font = '26px Georgia, serif';
+  ctx.fillStyle = '#3d2a18';
+  ctx.fillText('— Volume I —', 256, 360);
+  ctx.font = '18px Georgia, serif';
+  ctx.fillStyle = '#5a4530';
+  ctx.fillText('A story in the leaves', 256, 410);
+  return new THREE.CanvasTexture(cv);
+}
+
+function makeSpreadPageTexture(main, sub) {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 704;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ebe4d4'; ctx.fillRect(0, 0, 512, 704);
+  for (let y = 0; y < 704; y += 3) {
+    ctx.strokeStyle = `rgba(120,80,30,${0.02 + Math.random() * 0.03})`;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
+  }
+  ctx.fillStyle = '#1a1008';
+  ctx.font = 'bold 40px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(main, 256, 300);
+  ctx.font = '22px Georgia, serif';
+  ctx.fillStyle = '#4a3520';
+  ctx.fillText(sub, 256, 370);
+  return new THREE.CanvasTexture(cv);
+}
+
+function woodTex() {
+  const cv = document.createElement('canvas'); cv.width=512; cv.height=256;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle='#4a2e10'; ctx.fillRect(0,0,512,256);
+  for (let i=0;i<140;i++){
+    const y=Math.random()*256, wave=Math.random()*5;
+    ctx.beginPath();
+    for(let x=0;x<512;x+=2){const yy=y+Math.sin(x*0.04+i)*wave; x===0?ctx.moveTo(x,yy):ctx.lineTo(x,yy);}
+    ctx.strokeStyle=`rgba(${Math.random()>0.5?18:75},${Math.random()>0.5?8:38},0,${0.05+Math.random()*0.12})`;
+    ctx.lineWidth=0.5+Math.random()*2; ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(3,2); return t;
+}
+
+function groundTex() {
+  const cv = document.createElement('canvas'); cv.width=cv.height=512;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle='#0b1808'; ctx.fillRect(0,0,512,512);
+  for(let i=0;i<8000;i++){
+    const x=Math.random()*512, y=Math.random()*512, s=Math.random()*3;
+    const g=Math.floor(18+Math.random()*55);
+    ctx.fillStyle=`rgba(8,${g},4,0.45)`; ctx.fillRect(x,y,s,s);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(8,8);   return t;
+}
+
+function parchmentBoardTex() {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 512;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 512, 512);
+  g.addColorStop(0, '#dcc4a4');
+  g.addColorStop(0.45, '#caa878');
+  g.addColorStop(1, '#b8925c');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 512, 512);
+  for (let y = 0; y < 512; y += 2) {
+    ctx.strokeStyle = `rgba(95,55,22,${0.02 + Math.random() * 0.035})`;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(512, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 380; i++) {
+    ctx.strokeStyle = `rgba(85,48,18,${0.025 + Math.random() * 0.05})`;
+    ctx.beginPath();
+    const x = Math.random() * 512;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + (Math.random() - 0.5) * 10, 512);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1.15, 1.15);
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return t;
+}
+
+const pTex = pageTex();
+const titleTexMap = titleTex();
+const spreadTexMaps = [
+  titleTexMap,
+  makeSpreadPageTexture('Chapter One', 'The path through the ferns'),
+  makeSpreadPageTexture('Chapter Two', 'Evening by the shore'),
+  makeSpreadPageTexture('The End', '— for now —'),
+];
+const wTex = woodTex();
+const gTex = groundTex();
+
+function simpleCupWoodTex() {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 256, 0);
+  g.addColorStop(0, '#4a3020');
+  g.addColorStop(0.5, '#5c3e28');
+  g.addColorStop(1, '#4a3020');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 8; i++) {
+    const x = (i + 0.4) * (256 / 8);
+    ctx.strokeStyle = `rgba(25,14,6,${0.12 + i * 0.02})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 2, 256);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1.2, 1.2);
+  return t;
+}
+
+function applyBarrelBulge(geometry, height, strength) {
+  const pos = geometry.attributes.position;
+  const halfH = height * 0.5;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const t = (y + halfH) / height;
+    const f = 1 + strength * Math.sin(Math.PI * Math.max(0, Math.min(1, t)));
+    pos.setX(i, pos.getX(i) * f);
+    pos.setZ(i, pos.getZ(i) * f);
+  }
+  pos.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+/* ── MATERIALS ── */
+const parchmentMat = new THREE.MeshStandardMaterial({
+  map: parchmentBoardTex(),
+  roughness: 0.9,
+  metalness: 0.02,
+  color: 0xffffff,
+});
+/* Basic material so the cover art stays visible regardless of lighting angle (Standard looked near-black in spots). */
+const frontCoverMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+});
+const bookParchmentMats = [
+  parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat, parchmentMat,
+];
+(function loadFrontCover() {
+  const texLoader = new THREE.TextureLoader();
+  texLoader.setCrossOrigin('anonymous');
+  texLoader.load(
+    assetUrl('siddhartha_cover.png'),
+    function (tex) {
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      tex.encoding = THREE.sRGBEncoding;
+      frontCoverMat.map = tex;
+      frontCoverMat.needsUpdate = true;
+    },
+    undefined,
+    function () {
+      console.warn('siddhartha_cover.png missing — front cover uses solid color');
+    },
+  );
+})();
+const pMat = new THREE.MeshStandardMaterial({
+  map: pTex, roughness: 0.95, metalness: 0, color: 0xc09850,
+});
+const titleMat = new THREE.MeshStandardMaterial({
+  map: titleTexMap, roughness: 0.92, metalness: 0, color: 0xf5edd8,
+  side: THREE.DoubleSide,
+});
+const tMat = new THREE.MeshStandardMaterial({
+  map: wTex, roughness: 0.52, metalness: 0.04, color: 0x5a3518,
+});
+const tEdge = new THREE.MeshStandardMaterial({
+  map: wTex, roughness: 0.60, metalness: 0.03, color: 0x472a10,
+});
+const gMat = new THREE.MeshStandardMaterial({
+  map: gTex, roughness: 1.0, metalness: 0, color: 0x0d1f08,
+});
+
+/* ── GROUND ── */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40,40), gMat);
+ground.rotation.x = -Math.PI/2; ground.position.y = -2.15;
+ground.receiveShadow = true; scene.add(ground);
+
+/* ── TABLE ── */
+const tGroup = new THREE.Group();
+const top = new THREE.Mesh(new THREE.BoxGeometry(5.0,0.12,3.2), tMat);
+top.position.y = 0; top.castShadow = top.receiveShadow = true; tGroup.add(top);
+[[-2.42,0,0],[2.42,0,0],[0,0,-1.54],[0,0,1.54]].forEach(([x,y,z],i)=>{
+  const h=i<2;
+  const a=new THREE.Mesh(new THREE.BoxGeometry(h?0.08:4.84,0.22,h?3.04:0.08),tEdge);
+  a.position.set(x,y-0.17,z); a.castShadow=a.receiveShadow=true; tGroup.add(a);
+});
+[[-2.22,-1.3,-1.3],[2.22,-1.3,-1.3],[-2.22,-1.3,1.3],[2.22,-1.3,1.3]].forEach(([x,y,z])=>{
+  const leg=new THREE.Mesh(new THREE.BoxGeometry(0.14,2.6,0.14),tEdge);
+  leg.position.set(x,y,z); leg.castShadow=true; tGroup.add(leg);
+});
+tGroup.position.y = 0.5; scene.add(tGroup);
+
+const COQUI_CYCLE = 120;
+const COQUI_IN = 1.05;
+const COQUI_STAY = 5;
+const COQUI_OUT = 0.68;
+const COQUI_GLIDE = 2.5;
+const COQUI_EXIT = COQUI_IN + COQUI_STAY + COQUI_OUT;
+const COQUI_ACTIVE = COQUI_EXIT + COQUI_GLIDE;
+const COQUI_TABLE_TOP_Y = 0.06;
+const COQUI_FOOT_Y = COQUI_TABLE_TOP_Y + 0.008;
+const COQUI_ARC_PEAK = 0.42;
+const COQUI_TARGET_MAX_DIM = 1.45 / 3;
+
+const coquiJumpInStart = new THREE.Vector3(-2.95, -0.24, -0.55);
+const coquiLand = new THREE.Vector3(-2.02, COQUI_FOOT_Y, -1.36);
+const coquiJumpOutEnd = new THREE.Vector3(-7.55, -0.32, -3.05);
+const coquiPeakOut = COQUI_ARC_PEAK * 0.94;
+const COQUI_GRAV = 14.5;
+const coquiFallV0 = new THREE.Vector3(
+  (coquiJumpOutEnd.x - coquiLand.x) / COQUI_OUT,
+  (coquiJumpOutEnd.y - coquiLand.y - 4 * coquiPeakOut) / COQUI_OUT,
+  (coquiJumpOutEnd.z - coquiLand.z) / COQUI_OUT,
+);
+
+const coquiGroup = new THREE.Group();
+coquiGroup.visible = false;
+let coquiRig = null;
+
+const coquiYawIn = Math.atan2(
+  coquiLand.x - coquiJumpInStart.x,
+  coquiLand.z - coquiJumpInStart.z,
+);
+const coquiYawOut = Math.atan2(
+  coquiJumpOutEnd.x - coquiLand.x,
+  coquiJumpOutEnd.z - coquiLand.z,
+);
+
+function loadCoquiGltf() {
+  if (typeof THREE.GLTFLoader === 'undefined') {
+    console.warn('GLTFLoader missing — add GLTFLoader script for frog.glb');
+    return;
+  }
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    assetUrl('frog.glb'),
+    function (gltf) {
+      const model = gltf.scene;
+      const cubeNodes = [];
+      model.traverse(function (child) {
+        if (!child.name) return;
+        if (child.name === '_Cube_0' || /cube/i.test(child.name)) {
+          cubeNodes.push(child);
+        }
+      });
+      cubeNodes.forEach(function (node) {
+        if (!node.parent) return;
+        node.parent.remove(node);
+        node.traverse(function (ch) {
+          if (ch.isMesh) {
+            if (ch.geometry) ch.geometry.dispose();
+            const m = ch.material;
+            if (m) {
+              if (Array.isArray(m)) m.forEach(function (mat) { mat.dispose(); });
+              else m.dispose();
+            }
+          }
+        });
+      });
+      model.traverse(function (child) {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
+      const s = COQUI_TARGET_MAX_DIM / maxDim;
+      model.scale.setScalar(s);
+      model.updateMatrixWorld(true);
+      const box2 = new THREE.Box3().setFromObject(model);
+      model.position.y = -box2.min.y;
+      const cx = (box2.min.x + box2.max.x) * 0.5;
+      const cz = (box2.min.z + box2.max.z) * 0.5;
+      model.position.x -= cx;
+      model.position.z -= cz;
+      model.rotation.y += Math.PI;
+
+      const squash = new THREE.Group();
+      const pitch = new THREE.Group();
+      squash.add(pitch);
+      pitch.add(model);
+      squash.scale.setScalar(1);
+      coquiGroup.add(squash);
+
+      coquiRig = {
+        squash,
+        pitch,
+        model,
+        baseScale: 1,
+        legs: null,
+        head: null,
+        eyeL: null,
+        eyeR: null,
+      };
+    },
+    undefined,
+    function (err) {
+      console.warn('frog.glb failed to load', err);
+    },
+  );
+}
+loadCoquiGltf();
+tGroup.add(coquiGroup);
+
+function coquiJumpPoint(u, a, b, peak) {
+  const x = a.x + (b.x - a.x) * u;
+  const z = a.z + (b.z - a.z) * u;
+  const yBase = a.y + (b.y - a.y) * u;
+  const yArc = 4 * u * (1 - u) * peak;
+  coquiGroup.position.set(x, yBase + yArc, z);
+}
+
+function coquiJumpPitchRad(u, a, b, peak) {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const dy = b.y - a.y + 4 * peak * (1 - 2 * u);
+  const horiz = Math.sqrt(dx * dx + dz * dz) || 0.001;
+  return Math.atan2(dy, horiz);
+}
+
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function updateCoquiFrog(elapsed, easeIo) {
+  if (!coquiRig) return;
+  const phase = elapsed % COQUI_CYCLE;
+  if (phase >= COQUI_ACTIVE) {
+    coquiGroup.visible = false;
+    return;
+  }
+  coquiGroup.visible = true;
+
+  const R = coquiRig;
+  const S = R.baseScale;
+  const setSquash = function (airAmount, impact) {
+    const a = Math.max(0, Math.min(1, airAmount));
+    const im = impact || 0;
+    const sy = 1 - a * 0.1 + im * 0.12;
+    const sxz = 1 + a * 0.06 - im * 0.05;
+    R.squash.scale.set(sxz * S, sy * S, sxz * S);
+  };
+
+  const applyLegs = function (frontX, backX, spread) {
+    if (!R.legs) return;
+    const sp = spread || 0;
+    R.legs.forEach(function (leg) {
+      leg.pivot.rotation.x = leg.isFront ? frontX : backX;
+      leg.pivot.rotation.z = leg.pivot.position.x < 0 ? -sp : sp;
+    });
+  };
+
+  if (phase < COQUI_IN) {
+    const t = phase / COQUI_IN;
+    const u = easeIo(t);
+    coquiJumpPoint(u, coquiJumpInStart, coquiLand, COQUI_ARC_PEAK);
+    const pitchT = coquiJumpPitchRad(u, coquiJumpInStart, coquiLand, COQUI_ARC_PEAK);
+    R.pitch.rotation.x = THREE.MathUtils.clamp(pitchT * 0.92, -0.55, 0.48);
+    const crouch = smoothstep(0.22, 0, u) * 0.85;
+    const launch =
+      smoothstep(0.08, 0.28, u) * (1 - smoothstep(0.38, 0.58, u));
+    const flight = Math.sin(Math.PI * u) * 0.55;
+    const backLeg = -0.35 - crouch * 0.45 + launch * 0.5 + flight * 0.4;
+    const frontLeg = -0.15 - crouch * 0.55 + launch * 0.35 + flight * 0.25;
+    applyLegs(frontLeg, backLeg, 0.04 + crouch * 0.08);
+    const wobble = Math.sin(u * Math.PI);
+    setSquash(wobble, u > 0.92 ? (u - 0.92) / 0.08 : 0);
+    coquiGroup.rotation.y = coquiYawIn * (1 - u);
+    coquiGroup.rotation.z = (1 - u) * 0.12;
+    if (R.eyeL && R.eyeR) {
+      R.eyeL.scale.y = R.eyeR.scale.y = 1;
+    }
+    if (R.head) {
+      R.head.rotation.y = 0;
+      R.head.rotation.z = Math.sin(u * Math.PI * 2) * 0.06;
+    }
+  } else if (phase < COQUI_IN + COQUI_STAY) {
+    const idle = phase - COQUI_IN;
+    coquiGroup.position.copy(coquiLand);
+    R.pitch.rotation.x = Math.sin(idle * 2.2) * 0.035;
+    const breath = Math.sin(idle * 2.8) * 0.018;
+    setSquash(0, 0);
+    R.squash.scale.y = S * (1 + breath);
+    R.squash.scale.x = R.squash.scale.z = S * (1 - breath * 0.35);
+    applyLegs(-0.22, -0.38, 0.06 + Math.sin(idle * 1.9) * 0.03);
+    coquiGroup.rotation.y = Math.sin(idle * 0.7) * 0.08;
+    coquiGroup.rotation.z = Math.sin(idle * 3.1) * 0.04;
+    coquiGroup.position.y = coquiLand.y + Math.sin(idle * 2.6) * 0.004;
+    if (R.head) {
+      R.head.rotation.y = Math.sin(idle * 1.1) * 0.07;
+      R.head.rotation.z = Math.sin(idle * 2.4) * 0.05;
+    }
+    if (R.eyeL && R.eyeR) {
+      const blinkT = idle % 4.2;
+      const blink = blinkT > 3.15 && blinkT < 3.28 ? 0.12 : 1;
+      R.eyeL.scale.y = blink;
+      R.eyeR.scale.y = blink;
+    }
+  } else if (phase < COQUI_EXIT) {
+    const t = (phase - COQUI_IN - COQUI_STAY) / COQUI_OUT;
+    const u = Math.min(1, Math.max(0, t));
+    coquiJumpPoint(u, coquiLand, coquiJumpOutEnd, coquiPeakOut);
+    const pitchT = coquiJumpPitchRad(u, coquiLand, coquiJumpOutEnd, coquiPeakOut);
+    R.pitch.rotation.x = THREE.MathUtils.clamp(pitchT * 0.95, -0.62, 0.52);
+    const prep = smoothstep(0, 0.18, u);
+    const flight = Math.sin(Math.PI * u) * 0.58;
+    const backLeg = -0.32 + prep * 0.55 + flight * 0.55;
+    const frontLeg = -0.18 + prep * 0.45 + flight * 0.35;
+    applyLegs(frontLeg, backLeg, 0.05);
+    setSquash(Math.sin(u * Math.PI), u < 0.1 ? (0.1 - u) / 0.1 * 0.4 : 0);
+    coquiGroup.rotation.y = coquiYawOut * u;
+    coquiGroup.rotation.z = u * 0.14;
+    if (R.head) {
+      R.head.rotation.y = 0;
+      R.head.rotation.z = -Math.sin(u * Math.PI) * 0.05;
+    }
+    if (R.eyeL && R.eyeR) {
+      R.eyeL.scale.y = R.eyeR.scale.y = 1;
+    }
+  } else {
+    const tf = phase - COQUI_EXIT;
+    const p0 = coquiJumpOutEnd;
+    const v0 = coquiFallV0;
+    const g = COQUI_GRAV;
+    coquiGroup.position.set(
+      p0.x + v0.x * tf,
+      p0.y + v0.y * tf - 0.5 * g * tf * tf,
+      p0.z + v0.z * tf,
+    );
+    const vx = v0.x;
+    const vy = v0.y - g * tf;
+    const vz = v0.z;
+    const horizSp = Math.sqrt(vx * vx + vz * vz) || 0.001;
+    R.pitch.rotation.x = THREE.MathUtils.clamp(
+      Math.atan2(vy, horizSp) * 0.94,
+      -0.78,
+      0.72,
+    );
+    setSquash(0, 0);
+    coquiGroup.rotation.y = coquiYawOut;
+    coquiGroup.rotation.z = 0.14 * (1 - Math.min(1, tf / 0.5));
+    if (R.head) {
+      R.head.rotation.y = 0;
+      R.head.rotation.z = 0;
+    }
+    if (R.eyeL && R.eyeR) {
+      R.eyeL.scale.y = R.eyeR.scale.y = 1;
+    }
+  }
+}
+
+const teaGroup = new THREE.Group();
+teaGroup.scale.set(5, 5, 5);
+teaGroup.position.set(1.48, 0.06, -0.58);
+
+const simpleCupWoodMap = simpleCupWoodTex();
+const woodCupMat = new THREE.MeshStandardMaterial({
+  map: simpleCupWoodMap,
+  roughness: 0.45,
+  metalness: 0.03,
+  color: 0x6a4a34,
+  side: THREE.DoubleSide,
+});
+const woodCupInnerMat = new THREE.MeshStandardMaterial({
+  map: simpleCupWoodMap,
+  roughness: 0.5,
+  metalness: 0.02,
+  color: 0x4a3424,
+  side: THREE.DoubleSide,
+});
+const woodSaucerMat = new THREE.MeshStandardMaterial({
+  map: simpleCupWoodMap,
+  roughness: 0.46,
+  metalness: 0.03,
+  color: 0x5c402c,
+  side: THREE.DoubleSide,
+});
+
+const teaLiquidMat = new THREE.MeshStandardMaterial({
+  color: 0x3d2210,
+  roughness: 0.32,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.93,
+  side: THREE.DoubleSide,
+});
+const saucerPts = [
+  new THREE.Vector2(0, 0),
+  new THREE.Vector2(0.048, 0),
+  new THREE.Vector2(0.062, 0.005),
+  new THREE.Vector2(0.069, 0.011),
+];
+const saucer = new THREE.Mesh(new THREE.LatheGeometry(saucerPts, 48), woodSaucerMat);
+saucer.position.y = 0.008;
+saucer.receiveShadow = true;
+saucer.castShadow = true;
+teaGroup.add(saucer);
+
+const cupH = 0.108;
+const cupRTop = 0.041;
+const cupRBot = 0.035;
+const cupCy = 0.062;
+const cupHalfH = cupH * 0.5;
+const barrelStrength = 0.12;
+const rimT = 0.007;
+const wall = 0.005;
+const innerRTop = cupRTop - wall;
+const innerRBot = cupRBot - wall;
+const innerH = cupH - rimT;
+
+const cupOuterGeo = new THREE.CylinderGeometry(cupRTop, cupRBot, cupH, 40, 1, true);
+applyBarrelBulge(cupOuterGeo, cupH, barrelStrength);
+const cupOuter = new THREE.Mesh(cupOuterGeo, woodCupMat);
+cupOuter.position.y = cupCy;
+cupOuter.castShadow = true;
+cupOuter.receiveShadow = true;
+teaGroup.add(cupOuter);
+
+const cupBottom = new THREE.Mesh(new THREE.CircleGeometry(cupRBot, 32), woodCupMat);
+cupBottom.rotation.x = -Math.PI / 2;
+cupBottom.position.y = cupCy - cupHalfH;
+cupBottom.receiveShadow = true;
+teaGroup.add(cupBottom);
+
+const innerGeo = new THREE.CylinderGeometry(innerRTop, innerRBot, innerH, 40, 1, true);
+applyBarrelBulge(innerGeo, innerH, barrelStrength);
+const teaInner = new THREE.Mesh(innerGeo, woodCupInnerMat);
+teaInner.position.y = cupCy - rimT * 0.5;
+teaInner.renderOrder = 1;
+teaGroup.add(teaInner);
+
+const teaLevelY = cupCy + cupHalfH - rimT - 0.004;
+const teaSurface = new THREE.Mesh(new THREE.CircleGeometry(innerRTop * 0.98, 28), teaLiquidMat);
+teaSurface.rotation.x = -Math.PI / 2;
+teaSurface.position.y = teaLevelY;
+teaSurface.renderOrder = 2;
+teaGroup.add(teaSurface);
+
+const teaBottomInner = new THREE.Mesh(new THREE.CircleGeometry(innerRBot * 0.995, 28), teaLiquidMat);
+teaBottomInner.rotation.x = -Math.PI / 2;
+teaBottomInner.position.y = cupCy - cupHalfH + 0.0015;
+teaGroup.add(teaBottomInner);
+
+const STEAM_N = 56;
+const steamPos = new Float32Array(STEAM_N * 3);
+const steamPh = new Float32Array(STEAM_N);
+const steamAng = new Float32Array(STEAM_N);
+const steamRad = new Float32Array(STEAM_N);
+for (let i = 0; i < STEAM_N; i++) {
+  steamAng[i] = Math.random() * Math.PI * 2;
+  steamRad[i] = Math.random() * innerRTop * 0.88;
+  steamPh[i] = Math.random();
+}
+const steamGeo = new THREE.BufferGeometry();
+steamGeo.setAttribute('position', new THREE.BufferAttribute(steamPos, 3));
+const steamTexCv = document.createElement('canvas');
+steamTexCv.width = steamTexCv.height = 64;
+(function () {
+  const ctx = steamTexCv.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,252,248,0.95)');
+  g.addColorStop(0.35, 'rgba(245,238,230,0.35)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+})();
+const steamTex = new THREE.CanvasTexture(steamTexCv);
+const steamMat = new THREE.PointsMaterial({
+  map: steamTex,
+  color: 0xffffff,
+  size: 0.14,
+  transparent: true,
+  opacity: 0.32,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  sizeAttenuation: true,
+  alphaTest: 0.02,
+});
+const teaSteam = new THREE.Points(steamGeo, steamMat);
+teaSteam.renderOrder = 6;
+teaGroup.add(teaSteam);
+
+tGroup.add(teaGroup);
+
+const TABLE_TOP_Y = 0.5 + 0.06;
+const BOOK_BOT_LOCAL_Y = -0.14 - 0.055 / 2;
+const BOOK_GROUP_Y = TABLE_TOP_Y - BOOK_BOT_LOCAL_Y;
+
+/* ── BOOK (cover hinge at HINGE_X) ── */
+const HINGE_X = -0.75;
+const BOOK_START_ROT_Y = 0.18;
+const COVER_OPEN_ANGLE = -Math.PI * 0.998;
+const bGroup = new THREE.Group();
+const BOOK_PAGE_WIDTH = 1.5;
+const READING_PAGE_Y = 0.22;
+const bBot = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), bookParchmentMats);
+bBot.position.y = -0.14;
+bBot.castShadow = bBot.receiveShadow = true;
+bBot.userData.isBookPart = true;
+bGroup.add(bBot);
+const bPgs = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.3, 1.9), pMat);
+bPgs.position.y = 0.04;
+bPgs.castShadow = bPgs.receiveShadow = true;
+bPgs.userData.isBookPart = true;
+bGroup.add(bPgs);
+
+const titlePivot = new THREE.Group();
+titlePivot.position.set(HINGE_X, READING_PAGE_Y, 0);
+const titlePage = new THREE.Mesh(new THREE.PlaneGeometry(BOOK_PAGE_WIDTH, 1.9), titleMat);
+titlePage.rotation.x = -Math.PI / 2;
+titlePage.position.set(0.75, 0, 0);
+titlePage.receiveShadow = true;
+titlePage.castShadow = true;
+titlePage.userData.isTitlePage = true;
+titlePivot.add(titlePage);
+bGroup.add(titlePivot);
+
+const coverPivot = new THREE.Group();
+coverPivot.position.set(HINGE_X, READING_PAGE_Y, 0);
+const bTop = new THREE.Mesh(new THREE.BoxGeometry(BOOK_PAGE_WIDTH, 0.055, 2.0), frontCoverMat);
+bTop.position.set(0.75, 0, 0);
+bTop.castShadow = bTop.receiveShadow = true;
+bTop.userData.isBookCover = true;
+coverPivot.add(bTop);
+
+const bSpine = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.375, 2.0), bookParchmentMats);
+bSpine.position.set(-0.765, 0.04, 0);
+bSpine.castShadow = true;
+bSpine.userData.isBookPart = true;
+bGroup.add(bSpine);
+bGroup.add(coverPivot);
+
+const PAGE_HALF_W = BOOK_PAGE_WIDTH / 2;
+const leftPageMat = new THREE.MeshStandardMaterial({
+  roughness: 0.92, metalness: 0, color: 0xece6dc,
+  side: THREE.DoubleSide,
+});
+const leftPagePlane = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_HALF_W, 1.88), leftPageMat);
+leftPagePlane.rotation.x = -Math.PI / 2;
+leftPagePlane.position.set(-PAGE_HALF_W / 2, READING_PAGE_Y, 0);
+leftPagePlane.receiveShadow = true;
+leftPagePlane.castShadow = true;
+leftPagePlane.visible = false;
+bGroup.add(leftPagePlane);
+
+const rightPageMat = new THREE.MeshStandardMaterial({
+  roughness: 0.92, metalness: 0, color: 0xf5edd8,
+  side: THREE.DoubleSide, transparent: true, opacity: 0.98,
+});
+const rightPagePlane = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_HALF_W, 1.88), rightPageMat);
+rightPagePlane.rotation.x = -Math.PI / 2;
+rightPagePlane.position.set(PAGE_HALF_W / 2, READING_PAGE_Y, -0.004);
+rightPagePlane.receiveShadow = true;
+rightPagePlane.visible = false;
+bGroup.add(rightPagePlane);
+
+bGroup.position.set(0, BOOK_GROUP_Y, 0);
+bGroup.rotation.y = BOOK_START_ROT_Y;
+scene.add(bGroup);
+
+/* ── FOLIAGE ── */
+function palmLeaf(size, color) {
+  const shape = new THREE.Shape();
+  shape.moveTo(0,0);
+  shape.bezierCurveTo(size*0.1,size*0.35,size*0.28,size*0.85,0,size);
+  shape.bezierCurveTo(-size*0.28,size*0.85,-size*0.1,size*0.35,0,0);
+  const geo = new THREE.ShapeGeometry(shape, 8);
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    color, roughness:0.88, metalness:0, side:THREE.DoubleSide, transparent:true, opacity:0.90,
+  }));
+}
+
+function addPalm(x, y, z, sc, ry) {
+  const g = new THREE.Group();
+  const cols = [0x1a4010,0x1f5014,0x2a6018,0x164010,0x1e4c12];
+  const angles = Array.from({length:14},(_,i)=>(i/14)*Math.PI*2);
+  angles.forEach((a,i)=>{
+    const lf = palmLeaf(1.3+Math.random()*0.9, cols[i%cols.length]);
+    lf.rotation.z=a; lf.rotation.x=-0.28-Math.random()*0.5;
+    g.add(lf);
+  });
+  g.position.set(x,y,z); g.scale.setScalar(sc); g.rotation.y=ry;
+  scene.add(g);
+  const trunk=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04*sc,0.07*sc,2.2*sc,7),
+    new THREE.MeshStandardMaterial({color:0x3a2010,roughness:0.92})
+  );
+  trunk.position.set(x,y-sc*1.1,z); trunk.castShadow=true; scene.add(trunk);
+  return g;
+}
+
+const palms = [];
+palms.push(addPalm(-5,4.4,-6,2.3,0.3));
+palms.push(addPalm(5.5,4.0,-5,2.1,-0.5));
+palms.push(addPalm(-3.5,3.6,-4,1.8,0.8));
+palms.push(addPalm(4.2,3.3,-3,1.6,-0.2));
+palms.push(addPalm(0,4.8,-7,2.6,0.1));
+palms.push(addPalm(-4.2,3.2,2.2,1.4,1.2));
+palms.push(addPalm(4.8,2.9,1.8,1.3,-0.9));
+
+function addFern(x, y, z, sc) {
+  const g = new THREE.Group();
+  const cols=[0x1a4a0a,0x164008,0x1e540c];
+  for(let i=0;i<9;i++){
+    const a=(i/9)*Math.PI*2, len=0.5+Math.random()*0.7;
+    const shape=new THREE.Shape();
+    shape.moveTo(0,0); shape.quadraticCurveTo(len*0.3,len*0.5,0,len);
+    shape.quadraticCurveTo(-len*0.12,len*0.5,0,0);
+    const frond=new THREE.Mesh(new THREE.ShapeGeometry(shape,5),
+      new THREE.MeshStandardMaterial({color:cols[i%3],roughness:0.9,side:THREE.DoubleSide,transparent:true,opacity:0.88}));
+    frond.rotation.y=a; frond.rotation.x=-0.4-Math.random()*0.4;
+    g.add(frond);
+  }
+  g.position.set(x,y,z); g.scale.setScalar(sc); scene.add(g);
+}
+
+addFern(-2.8,-2.1,1.5,1.5); addFern(3.0,-2.1,1.8,1.3);
+addFern(-4.5,-2.1,-1,1.7);  addFern(4.8,-2.1,-2,1.4);
+addFern(-1.5,-2.1,3.5,1.1); addFern(2.0,-2.1,3.8,1.0);
+addFern(0,-2.1,-2.5,1.2);   addFern(-3,-2.1,-2,1.3);
+addFern(3.5,-2.1,-1,1.1);
+
+/* ── LIGHTS ── */
+scene.add(new THREE.AmbientLight(0x183820, 1.4));
+
+const spot = new THREE.SpotLight(0xfff8e0, 320);
+spot.position.set(-2.5, 10.0, 3.5);
+spot.target.position.copy(bGroup.position);
+spot.angle = Math.PI / 8;
+spot.penumbra = 0.45;
+spot.decay = 1.8; spot.distance = 32;
+spot.castShadow = true;
+spot.shadow.mapSize.width = spot.shadow.mapSize.height = 1024;
+spot.shadow.camera.near = 1; spot.shadow.camera.far = 34;
+spot.shadow.bias = -0.001;
+scene.add(spot); scene.add(spot.target);
+
+const sunFill = new THREE.DirectionalLight(0x78b860, 0.7);
+sunFill.position.set(0, 8, -4); scene.add(sunFill);
+
+const bounce = new THREE.PointLight(0xc89018, 4.0, 6);
+bounce.position.set(0, 1.15, 1.2); scene.add(bounce);
+
+const rim = new THREE.PointLight(0x1a4028, 2.2, 14);
+rim.position.set(0, 3, -5); scene.add(rim);
+
+const sideFill = new THREE.PointLight(0x284018, 1.4, 10);
+sideFill.position.set(2.5, 2, 2); scene.add(sideFill);
+
+/* ── FIREFLIES ── */
+const FC = 40;
+const ffPos = new Float32Array(FC*3);
+const ffPh  = new Float32Array(FC);
+for(let i=0;i<FC;i++){
+  ffPos[i*3]=(Math.random()-0.5)*14;
+  ffPos[i*3+1]=Math.random()*5-1;
+  ffPos[i*3+2]=(Math.random()-0.5)*10;
+  ffPh[i]=Math.random()*Math.PI*2;
+}
+const ffGeo=new THREE.BufferGeometry();
+ffGeo.setAttribute('position',new THREE.BufferAttribute(ffPos,3));
+const ffMat=new THREE.PointsMaterial({color:0xc8ff50,size:0.065,transparent:true,opacity:0.8});
+const ff=new THREE.Points(ffGeo,ffMat);
+scene.add(ff);
+
+const clock = new THREE.Clock();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+let interactionMode = 'scene';
+let bookFloatEnabled = true;
+let openProgress = 0;
+let cameraAnim = 0;
+const CAM_TO_BOOK_DURATION = 1.35;
+const camStartPos = new THREE.Vector3();
+const camTargetPos = new THREE.Vector3();
+const camStartTgt = new THREE.Vector3();
+const camTargetTgt = new THREE.Vector3();
+const camCurTgt = new THREE.Vector3();
+const tmpDir = new THREE.Vector3();
+const SPINE_LOCAL = new THREE.Vector3(-0.765, 0.04, 0);
+const spineWorld = new THREE.Vector3();
+const CAM_OFFSET_SPREAD = new THREE.Vector3(0, 4.35, 0.05);
+
+function spineWorldPoint(out) {
+  bGroup.updateMatrixWorld(true);
+  return out.copy(SPINE_LOCAL).applyMatrix4(bGroup.matrixWorld);
+}
+
+let isOpeningBook = false;
+let openSoundPlayed = false;
+const BOOK_OPEN_SPEED = 0.58;
+let spreadIndex = 0;
+const MAX_SPREADS = 4;
+
+function easeInOut(t) {
+  return t * t * (3 - 2 * t);
+}
+
+function playBookOpenSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.14, ctx.currentTime + 0.02);
+    master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.42);
+    master.connect(ctx.destination);
+
+    const len = Math.floor(ctx.sampleRate * 0.35);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let n = 0;
+    for (let i = 0; i < len; i++) {
+      n = n * 0.96 + (Math.random() * 2 - 1) * 0.08;
+      d[i] = n * (1 - i / len);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.frequency.setValueAtTime(2200, ctx.currentTime);
+    bp.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 0.28);
+    src.connect(bp);
+    bp.connect(master);
+    src.start();
+
+    const creak = ctx.createOscillator();
+    creak.type = 'triangle';
+    creak.frequency.setValueAtTime(180, ctx.currentTime);
+    creak.frequency.exponentialRampToValueAtTime(95, ctx.currentTime + 0.22);
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, ctx.currentTime);
+    cg.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.015);
+    cg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+    creak.connect(cg);
+    cg.connect(master);
+    creak.start();
+    creak.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    console.warn('Book open sound failed', e);
+  }
+}
+
+function setPointer(ev) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function startCameraToBook() {
+  if (interactionMode !== 'scene') return;
+  interactionMode = 'cameraToBook';
+  bookFloatEnabled = false;
+  bGroup.position.y = BOOK_GROUP_Y;
+  camStartPos.copy(camera.position);
+  camera.getWorldDirection(tmpDir);
+  camStartTgt.copy(camera.position).add(tmpDir.multiplyScalar(6));
+  spineWorldPoint(spineWorld);
+  camTargetTgt.copy(spineWorld);
+  camTargetPos.copy(spineWorld).add(CAM_OFFSET_SPREAD);
+  cameraAnim = 0;
+  const prompt = document.getElementById('bookPrompt');
+  if (prompt) prompt.classList.remove('visible');
+}
+
+function updateBookFromProgress() {
+  const p = THREE.MathUtils.clamp(openProgress, 0, 1);
+  const s = easeInOut(p);
+  coverPivot.rotation.z = s * COVER_OPEN_ANGLE;
+  bGroup.rotation.y = BOOK_START_ROT_Y * (1 - s);
+  titlePivot.rotation.z = 0;
+}
+
+function hitIsCoverMesh(o) {
+  let p = o;
+  while (p) {
+    if (p === coverPivot) return true;
+    if (p.userData && p.userData.isBookCover) return true;
+    p = p.parent;
+  }
+  return false;
+}
+
+function applySpreadTextures() {
+  const si = spreadIndex;
+  const open = openProgress >= 0.999;
+  titleMat.map = spreadTexMaps[si];
+  titleMat.needsUpdate = true;
+  if (si === 0) {
+    titlePage.visible = open;
+    leftPagePlane.visible = false;
+    rightPagePlane.visible = false;
+  } else {
+    titlePage.visible = false;
+    rightPageMat.map = spreadTexMaps[si];
+    rightPageMat.needsUpdate = true;
+    if (leftPageMat.map) leftPageMat.map.dispose();
+    const backTex = spreadTexMaps[si - 1].clone();
+    backTex.wrapS = THREE.RepeatWrapping;
+    backTex.repeat.x = -1;
+    backTex.offset.x = 1;
+    leftPageMat.map = backTex;
+    leftPageMat.needsUpdate = true;
+    leftPagePlane.visible = open;
+    rightPagePlane.visible = open;
+  }
+}
+
+canvas.addEventListener('pointerdown', (ev) => {
+  startAudio().catch(function () {});
+  if (interactionMode === 'cameraToBook') return;
+  setPointer(ev);
+  raycaster.setFromCamera(pointer, camera);
+
+  if (interactionMode === 'scene') {
+    const sceneHits = raycaster.intersectObjects([bGroup], true);
+    if (sceneHits.length > 0) {
+      ev.preventDefault();
+      startCameraToBook();
+    }
+    return;
+  }
+
+  if (interactionMode === 'readyToOpen' || interactionMode === 'reading') {
+    const coverHits = raycaster.intersectObjects([coverPivot], true);
+    if (coverHits.length > 0 && !isOpeningBook && openProgress < 0.999) {
+      ev.preventDefault();
+      isOpeningBook = true;
+      if (!openSoundPlayed) {
+        openSoundPlayed = true;
+        playBookOpenSound();
+      }
+      const prompt = document.getElementById('bookPrompt');
+      if (prompt) prompt.classList.remove('visible');
+      return;
+    }
+
+    if (openProgress >= 1 && !isOpeningBook && spreadIndex < MAX_SPREADS - 1) {
+      const hits = raycaster.intersectObjects([bGroup], true);
+      if (hits.length > 0) {
+        const o = hits[0].object;
+        if (hitIsCoverMesh(o)) return;
+        ev.preventDefault();
+        spreadIndex++;
+        applySpreadTextures();
+        const prompt = document.getElementById('bookPrompt');
+        if (prompt) {
+          if (spreadIndex >= MAX_SPREADS - 1) {
+            prompt.classList.remove('visible');
+          } else {
+            prompt.textContent = 'Click to turn the page';
+            prompt.classList.add('visible');
+          }
+        }
+      }
+    }
+  }
+});
+
+applySpreadTextures();
+
+/* ── AMBIENT: looped MP4 (audio track) ── */
+let audioOn = false;
+const COQUI_AUDIO_KEY = 'coqui_audio_ok';
+
+function fadeInAmbient(ambient, targetVol) {
+  const start = performance.now();
+  const fadeMs = 900;
+  function fadeIn() {
+    const t = Math.min(1, (performance.now() - start) / fadeMs);
+    ambient.volume = targetVol * t;
+    if (t < 1) requestAnimationFrame(fadeIn);
+  }
+  requestAnimationFrame(fadeIn);
+}
+
+function startAudio() {
+  if (audioOn) return Promise.resolve();
+  const ambient = document.getElementById('ambient');
+  if (!ambient) return Promise.reject(new Error('no ambient element'));
+  if (!ambient.src) {
+    ambient.src = assetUrl('coqui_sounds.mp4');
+  }
+  ambient.loop = true;
+  const targetVol = 0.35;
+  function afterPlay() {
+    audioOn = true;
+    try {
+      sessionStorage.setItem(COQUI_AUDIO_KEY, '1');
+    } catch (e) {
+      /* private mode or disabled storage */
+    }
+    fadeInAmbient(ambient, targetVol);
+  }
+  function tryPlay() {
+    ambient.volume = 0;
+    const p = ambient.play();
+    if (p && typeof p.then === 'function') {
+      return p.then(afterPlay);
+    }
+    afterPlay();
+    return Promise.resolve();
+  }
+  function onMediaError() {
+    console.warn('Ambient <audio> load error', ambient.error);
+  }
+  if (!ambient.error) {
+    ambient.addEventListener('error', onMediaError, { once: true });
+  }
+  if (ambient.readyState >= 2) {
+    return tryPlay().catch(function (err) {
+      console.warn('Ambient playback failed', err);
+      audioOn = false;
+      throw err;
+    });
+  }
+  return new Promise(function (resolve, reject) {
+    function cleanup() {
+      ambient.removeEventListener('canplay', onReady);
+      ambient.removeEventListener('error', onFail);
+    }
+    function onReady() {
+      cleanup();
+      tryPlay()
+        .then(resolve)
+        .catch(function (err) {
+          console.warn('Ambient playback failed', err);
+          audioOn = false;
+          reject(err);
+        });
+    }
+    function onFail() {
+      cleanup();
+      onMediaError();
+      audioOn = false;
+      reject(new Error('ambient media load failed'));
+    }
+    ambient.addEventListener('canplay', onReady, { once: true });
+    ambient.addEventListener('error', onFail, { once: true });
+    try {
+      ambient.load();
+    } catch (e) {
+      /* ignore */
+    }
+  });
+}
+
+function detachAudioWakeListeners() {
+  window.removeEventListener('pointerdown', audioWakeHandler, true);
+  window.removeEventListener('touchstart', audioWakeHandler, true);
+  window.removeEventListener('keydown', audioWakeHandler, true);
+  window.removeEventListener('click', audioWakeHandler, true);
+}
+
+function audioWakeHandler() {
+  if (audioOn) {
+    detachAudioWakeListeners();
+    return;
+  }
+  startAudio()
+    .then(function () {
+      detachAudioWakeListeners();
+    })
+    .catch(function () {});
+}
+
+window.addEventListener('pointerdown', audioWakeHandler, true);
+window.addEventListener('touchstart', audioWakeHandler, true);
+window.addEventListener('keydown', audioWakeHandler, true);
+window.addEventListener('click', audioWakeHandler, true);
+
+if (sessionStorage.getItem(COQUI_AUDIO_KEY) === '1') {
+  startAudio()
+    .then(function () {
+      detachAudioWakeListeners();
+    })
+    .catch(function () {});
+}
+
+/* ── ANIMATE ── */
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.08, clock.getDelta());
+  const t = clock.getElapsedTime();
+
+  if (isOpeningBook) {
+    openProgress = Math.min(1, openProgress + dt * BOOK_OPEN_SPEED);
+    updateBookFromProgress();
+    if (openProgress >= 1) {
+      openProgress = 1;
+      updateBookFromProgress();
+      isOpeningBook = false;
+    }
+  }
+
+  if (interactionMode === 'readyToOpen' && openProgress >= 1 && !isOpeningBook) {
+    interactionMode = 'reading';
+    applySpreadTextures();
+    const prompt = document.getElementById('bookPrompt');
+    if (prompt) {
+      prompt.textContent = 'Click to turn the page';
+      prompt.classList.add('visible');
+    }
+  }
+
+  if (!bookFloatEnabled) {
+    spineWorldPoint(spineWorld);
+    if (interactionMode === 'cameraToBook') {
+      camTargetTgt.copy(spineWorld);
+      camTargetPos.copy(spineWorld).add(CAM_OFFSET_SPREAD);
+      cameraAnim += dt / CAM_TO_BOOK_DURATION;
+      const u = Math.min(1, cameraAnim);
+      const e = easeInOut(u);
+      camera.position.lerpVectors(camStartPos, camTargetPos, e);
+      camCurTgt.lerpVectors(camStartTgt, camTargetTgt, e);
+      camera.lookAt(camCurTgt);
+      if (u >= 1) {
+        interactionMode = 'readyToOpen';
+        const prompt = document.getElementById('bookPrompt');
+        if (prompt) prompt.classList.add('visible');
+      }
+    } else {
+      camera.position.copy(spineWorld).add(CAM_OFFSET_SPREAD);
+      camera.lookAt(spineWorld);
+    }
+  }
+  spot.target.position.copy(bGroup.position);
+
+  // Fireflies
+  const fp = ff.geometry.attributes.position.array;
+  for(let i=0;i<FC;i++){
+    fp[i*3+1] += Math.sin(t*0.7+ffPh[i])*0.002;
+    fp[i*3]   += Math.cos(t*0.45+ffPh[i]*1.3)*0.001;
+  }
+  ff.geometry.attributes.position.needsUpdate = true;
+  ffMat.opacity = 0.45 + Math.sin(t*2.0)*0.35;
+
+  const sp = teaSteam.geometry.attributes.position.array;
+  const rise = 0.16;
+  const drift = 0.022;
+  for (let i = 0; i < STEAM_N; i++) {
+    const ph = (t * 0.28 + steamPh[i]) % 1;
+    const spread = 1 + ph * 0.55;
+    const wobble = Math.sin(t * 1.4 + steamPh[i] * 6.28) * drift * ph;
+    const wobble2 = Math.cos(t * 1.1 + i * 0.7) * drift * ph * 0.6;
+    const a = steamAng[i] + ph * 0.65 + Math.sin(t * 0.5 + i) * 0.08;
+    const r = steamRad[i] * spread;
+    sp[i * 3] = Math.cos(a) * r + wobble;
+    sp[i * 3 + 1] = teaLevelY + 0.006 + ph * rise;
+    sp[i * 3 + 2] = Math.sin(a) * r + wobble2;
+  }
+  teaSteam.geometry.attributes.position.needsUpdate = true;
+  steamMat.opacity = 0.14 + Math.sin(t * 0.9 + 0.3) * 0.06;
+
+  if (bookFloatEnabled) {
+    bGroup.position.y = BOOK_GROUP_Y + Math.sin(t*0.38)*0.004;
+  }
+
+  // Palm sway
+  palms.forEach((p,i) => {
+    p.rotation.z = Math.sin(t*0.5 + i*0.8) * 0.035;
+    p.rotation.x = Math.sin(t*0.3 + i*0.5) * 0.012;
+  });
+
+  updateCoquiFrog(t, easeInOut);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ── RESIZE ── */
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+})();
+</script>
+</body>
+</html>

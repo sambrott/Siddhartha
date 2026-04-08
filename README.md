@@ -19,7 +19,7 @@ Then open the URL shown in the terminal.
 | `book_scene.html` | Scene |
 | `frog.glb` | Coquí frog model |
 | `coqui_sounds.mp4` | Ambient coquí audio (no spaces — works on GitHub Pages) |
-| `siddhartha_cover.jpg` | Front cover art (from `book coverjpg.jpg`) |
+| `siddhartha_cover.png` | Front cover art (falls back to `siddhartha_cover.jpg` if missing) |
 | Parchment | Generated in code (`parchmentBoardTex`) — no PNG required |
 
-Optional: `Untitled-1.jpg`, `book coverjpg.jpg` (reference only).
+Optional: `Untitled-1.jpg` (reference only).

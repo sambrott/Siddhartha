@@ -16,10 +16,37 @@
     display: none; text-align: center;
   }
   #bookPrompt.visible { display: block; }
+  #soundToggle {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 10;
+    padding: 6px 11px;
+    font-family: Georgia, serif;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(232, 213, 160, 0.5);
+    background: rgba(0, 0, 0, 0.38);
+    border: 1px solid rgba(200, 160, 96, 0.26);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+  #soundToggle:hover {
+    color: rgba(232, 213, 160, 0.92);
+    border-color: rgba(200, 160, 96, 0.48);
+    background: rgba(0, 0, 0, 0.52);
+  }
+  #soundToggle[aria-pressed="true"] {
+    color: rgba(232, 213, 160, 0.88);
+    border-color: rgba(200, 160, 96, 0.42);
+  }
 </style>
 </head>
 <body>
 <audio id="ambient" preload="auto" playsinline loop></audio>
+<button type="button" id="soundToggle" aria-pressed="false" aria-label="Ambient sound off. Click to turn on." title="Ambient sound">Sound · off</button>
 <div id="bookPrompt" aria-live="polite">Click the cover to open the book</div>
 <canvas id="c"></canvas>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -1038,7 +1065,6 @@ function applySpreadTextures() {
 }
 
 canvas.addEventListener('pointerdown', (ev) => {
-  startAudio().catch(function () {});
   if (interactionMode === 'cameraToBook') return;
   setPointer(ev);
   raycaster.setFromCamera(pointer, camera);
@@ -1090,9 +1116,9 @@ canvas.addEventListener('pointerdown', (ev) => {
 
 applySpreadTextures();
 
-/* ── AMBIENT: looped MP4 (audio track) ── */
-let audioOn = false;
-const COQUI_AUDIO_KEY = 'coqui_audio_ok';
+/* ── AMBIENT: looped MP4 (audio track), toggled via #soundToggle ── */
+const AMBIENT_TARGET_VOL = 0.35;
+const STORAGE_AMBIENT = 'siddhartha_ambient_on';
 
 function fadeInAmbient(ambient, targetVol) {
   const start = performance.now();
@@ -1106,22 +1132,23 @@ function fadeInAmbient(ambient, targetVol) {
 }
 
 function startAudio() {
-  if (audioOn) return Promise.resolve();
   const ambient = document.getElementById('ambient');
   if (!ambient) return Promise.reject(new Error('no ambient element'));
   if (!ambient.src) {
     ambient.src = assetUrl('coqui_sounds.mp4');
   }
   ambient.loop = true;
-  const targetVol = 0.35;
+  if (!ambient.paused) {
+    fadeInAmbient(ambient, AMBIENT_TARGET_VOL);
+    return Promise.resolve();
+  }
   function afterPlay() {
-    audioOn = true;
     try {
-      sessionStorage.setItem(COQUI_AUDIO_KEY, '1');
+      sessionStorage.setItem('coqui_audio_ok', '1');
     } catch (e) {
-      /* private mode or disabled storage */
+      /* ignore */
     }
-    fadeInAmbient(ambient, targetVol);
+    fadeInAmbient(ambient, AMBIENT_TARGET_VOL);
   }
   function tryPlay() {
     ambient.volume = 0;
@@ -1141,7 +1168,6 @@ function startAudio() {
   if (ambient.readyState >= 2) {
     return tryPlay().catch(function (err) {
       console.warn('Ambient playback failed', err);
-      audioOn = false;
       throw err;
     });
   }
@@ -1156,14 +1182,12 @@ function startAudio() {
         .then(resolve)
         .catch(function (err) {
           console.warn('Ambient playback failed', err);
-          audioOn = false;
           reject(err);
         });
     }
     function onFail() {
       cleanup();
       onMediaError();
-      audioOn = false;
       reject(new Error('ambient media load failed'));
     }
     ambient.addEventListener('canplay', onReady, { once: true });
@@ -1176,37 +1200,54 @@ function startAudio() {
   });
 }
 
-function detachAudioWakeListeners() {
-  window.removeEventListener('pointerdown', audioWakeHandler, true);
-  window.removeEventListener('touchstart', audioWakeHandler, true);
-  window.removeEventListener('keydown', audioWakeHandler, true);
-  window.removeEventListener('click', audioWakeHandler, true);
+function stopAmbient() {
+  const ambient = document.getElementById('ambient');
+  if (!ambient) return;
+  ambient.pause();
+  ambient.volume = 0;
 }
 
-function audioWakeHandler() {
-  if (audioOn) {
-    detachAudioWakeListeners();
-    return;
+function syncSoundToggleUi(on) {
+  const btn = document.getElementById('soundToggle');
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.setAttribute('aria-label', on ? 'Ambient sound on. Click to turn off.' : 'Ambient sound off. Click to turn on.');
+  btn.textContent = on ? 'Sound · on' : 'Sound · off';
+  btn.title = on ? 'Mute ambient sound' : 'Play ambient sound';
+}
+
+function writeAmbientPref(on) {
+  try {
+    localStorage.setItem(STORAGE_AMBIENT, on ? '1' : '0');
+  } catch (e) {
+    /* ignore */
   }
-  startAudio()
-    .then(function () {
-      detachAudioWakeListeners();
-    })
-    .catch(function () {});
 }
 
-window.addEventListener('pointerdown', audioWakeHandler, true);
-window.addEventListener('touchstart', audioWakeHandler, true);
-window.addEventListener('keydown', audioWakeHandler, true);
-window.addEventListener('click', audioWakeHandler, true);
-
-if (sessionStorage.getItem(COQUI_AUDIO_KEY) === '1') {
-  startAudio()
-    .then(function () {
-      detachAudioWakeListeners();
-    })
-    .catch(function () {});
-}
+(function initSoundToggle() {
+  const btn = document.getElementById('soundToggle');
+  if (!btn) return;
+  syncSoundToggleUi(false);
+  btn.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const pressed = btn.getAttribute('aria-pressed') === 'true';
+    if (pressed) {
+      stopAmbient();
+      writeAmbientPref(false);
+      syncSoundToggleUi(false);
+    } else {
+      startAudio()
+        .then(function () {
+          writeAmbientPref(true);
+          syncSoundToggleUi(true);
+        })
+        .catch(function () {
+          syncSoundToggleUi(false);
+        });
+    }
+  });
+})();
 
 /* ── ANIMATE ── */
 function animate() {
